@@ -383,6 +383,12 @@ void Puller::ProcessSemaphoreExecute(DmaPusher& dma_pusher, u32 argument) {
         return;
     }
     // Acquires: check once after flushing pending fences; never block the GPU thread on them.
+    // The check only feeds the warning below, so once that has been logged its last time, skip
+    // the wait for the split's back as well.
+    static std::atomic<u32> reported{};
+    if (reported.load(std::memory_order_relaxed) >= 8) {
+        return;
+    }
     DrainBack();
     dma_pusher.rasterizer->ReleaseFences();
     const u32 word = dma_pusher.memory_manager.Read<u32>(address);
@@ -393,7 +399,6 @@ void Puller::ProcessSemaphoreExecute(DmaPusher& dma_pusher, u32 argument) {
                        : operation == 5 ? (word & payload) == 0
                                         : true;
     if (!ready) {
-        static std::atomic<u32> reported{};
         if (reported.fetch_add(1) < 8) {
             LOG_WARNING(HW_GPU, "SEM_EXECUTE op {} at {:#x}: {:#x} vs {:#x} not met, continuing",
                         operation, address, word, payload);
