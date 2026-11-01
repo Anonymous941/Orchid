@@ -158,8 +158,10 @@ private:
     bool front_macros{};
     std::unique_ptr<u64[]> ring;
 
-    // Front side.
-    u64 write_position{};
+    // Front side. Its own cache line: the front writes write_position for every entry, and the
+    // back reads system and ring (above) for every entry; on one line, each write sent the line
+    // to the other core and back.
+    alignas(64) u64 write_position{};
     u64 published_local{};
     u64 consumed_cache{};
     /// Words between publishes: small right after a drain, while the back has nothing to do.
@@ -167,7 +169,7 @@ private:
     Tegra::Engines::EngineInterface* front_engine{};
 
     // Back side.
-    Tegra::Engines::EngineInterface* back_engine{};
+    alignas(64) Tegra::Engines::EngineInterface* back_engine{};
 
     static GpuSplit instance;
     static inline thread_local bool back_thread_context{};
