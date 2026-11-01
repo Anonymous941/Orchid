@@ -12,6 +12,7 @@
 #include "core/hle/kernel/k_client_session.h"
 #include "core/hle/kernel/k_hardware_timer.h"
 #include "core/hle/kernel/k_process.h"
+#include "core/hle/kernel/k_scheduler.h"
 #include "core/hle/kernel/k_scoped_resource_reservation.h"
 #include "core/hle/kernel/k_server_session.h"
 #include "core/hle/kernel/k_session.h"
@@ -49,9 +50,13 @@ Result SendSyncRequestImpl(KernelCore& kernel, uintptr_t message, size_t buffer_
         for (KThread* thread : pending) {
             // A thread blocked on a user mutex (e.g. the SDK's thread list lock, held by a sibling
             // starting on another core) has not reached its own code yet; keep waiting for it.
-            while ((thread->GetState() == ThreadState::Runnable ||
-                    thread->GetWaitingLockInfo() != nullptr) &&
-                   std::chrono::steady_clock::now() < deadline) {
+            // Its state and lock info change on other cores under the scheduler lock.
+            const auto still_starting = [&] {
+                KScopedSchedulerLock sl{kernel};
+                return thread->GetState() == ThreadState::Runnable ||
+                       thread->GetWaitingLockInfo() != nullptr;
+            };
+            while (still_starting() && std::chrono::steady_clock::now() < deadline) {
                 static_cast<void>(GetCurrentThread(kernel).Sleep(
                     kernel, kernel.HardwareTimer().GetTick() + 50'000));
             }
