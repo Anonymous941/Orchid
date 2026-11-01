@@ -199,6 +199,12 @@ private:
 
     void UpdateVertexInput(Tegra::Engines::Maxwell3D::Regs& regs);
 
+    /// The pipeline the dynamic states are set for: the one PrepareDraw bound, or (outside a
+    /// draw, e.g. DrawTexture) a fresh lookup.
+    GraphicsPipeline* DynamicStatePipeline() {
+        return draw_pipeline != nullptr ? draw_pipeline : pipeline_cache.CurrentGraphicsPipeline();
+    }
+
     Tegra::GPU& gpu;
     Tegra::MaxwellDeviceMemoryManager& device_memory;
 
@@ -232,6 +238,8 @@ private:
     boost::container::static_vector<VkSampler, MAX_TEXTURES> sampler_handles;
 
     u32 draw_counter = 0;
+    /// Set by PrepareDraw while it configures a draw (DynamicStatePipeline).
+    GraphicsPipeline* draw_pipeline = nullptr;
 };
 
 } // namespace Vulkan
