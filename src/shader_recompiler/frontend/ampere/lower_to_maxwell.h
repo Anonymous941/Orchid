@@ -321,7 +321,7 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
             emit(0x3828000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{16} << 20));
             emit(0x5c10000000000000ULL | predicate | 249 | (u64{250} << 8) | (u64{252} << 20));
             if (is_signed) {
-                for (const auto [value, other] : {std::pair{a, b}, std::pair{b, a}}) {
+                for (const auto& [value, other] : {std::pair{a, b}, std::pair{b, a}}) {
                     emit(0x3828000000000000ULL | predicate | 246 | (u64{value} << 8) |
                          (u64{31} << 20) | (u64{1} << 48));
                     emit(0x5c40000000000000ULL | predicate | 246 | (u64{246} << 8) |
