@@ -88,7 +88,7 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
         if (!geometry_stage) return fail(0, "native program counter load outside geometry stage");
         geometry_exit = AnalyzeGeometryExit(code);
         if (!*geometry_exit)
-            return fail(0, geometry_exit->error);
+            return fail(geometry_exit->error_offset / sizeof(Instruction), geometry_exit->error);
     }
     for (u32 index = 0; index < code.size(); ++index) {
         auto insn = code[index];
