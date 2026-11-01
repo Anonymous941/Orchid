@@ -484,9 +484,10 @@ SamplerId TextureCache<P>::GetSamplerId(u32 index, bool compute) {
     if (is_new) {
         auto const id = FindSampler(descriptor, compute);
         channel_state->sampler_ids.insert_or_assign(map_index, id);
+        table.ids[index] = id.index;
         return id;
     }
-    return channel_state->sampler_ids.find(map_index)->second;
+    return SamplerId{table.ids[index]};
 }
 
 template <class P>
@@ -731,17 +732,20 @@ ImageViewId TextureCache<P>::VisitImageView(u32 index, bool compute) {
             const auto [pair, is_new_tc] = channel_state->image_views.try_emplace(descriptor);
             if (is_new_tc)
                 pair->second = CreateImageView(descriptor);
-            PrepareImageView(pair->second, false, false);
-            channel_state->image_view_ids.insert_or_assign(map_index, pair->second);
-            return pair->second;
+            const ImageViewId view_id = pair->second;
+            PrepareImageView(view_id, false, false);
+            channel_state->image_view_ids.insert_or_assign(map_index, view_id);
+            table.ids[index] = view_id.index;
+            return view_id;
         }
         channel_state->image_view_ids.insert_or_assign(map_index, NULL_IMAGE_VIEW_ID);
+        table.ids[index] = NULL_IMAGE_VIEW_ID.index;
         return NULL_IMAGE_VIEW_ID;
     }
-    auto const it = channel_state->image_view_ids.find(map_index);
-    if (it->second != NULL_IMAGE_VIEW_ID)
-        PrepareImageView(it->second, false, false);
-    return it->second;
+    const ImageViewId view_id{table.ids[index]};
+    if (view_id != NULL_IMAGE_VIEW_ID)
+        PrepareImageView(view_id, false, false);
+    return view_id;
 }
 
 template <class P>

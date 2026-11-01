@@ -62,10 +62,16 @@ public:
         std::fill(read_descriptors.begin(), read_descriptors.begin() + old_size, 0);
         //
         descriptors.resize(num_descriptors);
+        ids.resize(num_descriptors);
     }
 
     std::vector<u64> read_descriptors;
     std::vector<T> descriptors;
+    /// What the texture cache made of each descriptor (an image view or sampler id), valid while
+    /// Read reports the descriptor as not new: the texture cache stores it whenever Read returns
+    /// new, and Invalidate/Refresh make every descriptor new again. Saves a hash lookup per
+    /// texture per draw.
+    std::vector<u32> ids;
     GPUVAddr current_gpu_addr{};
     u32 current_limit{};
 };
