@@ -581,6 +581,8 @@ private:
     Common::ScratchBuffer<u8> unswizzle_data_buffer;
 
     u64 modification_tick = 0;
+    /// Live images created with ImageFlagBits::UnwrittenSparse (MarkModification).
+    size_t unwritten_sparse_images = 0;
     u64 frame_tick = 0;
 
     Common::ThreadWorker texture_decode_worker{1, "TextureDecoder", {},

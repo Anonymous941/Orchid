@@ -2338,6 +2338,9 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
     }
     const ImageId new_image_id = slot_images.insert(runtime, new_info, gpu_addr, cpu_addr);
     Image& new_image = slot_images[new_image_id];
+    if (True(new_image.flags & ImageFlagBits::UnwrittenSparse)) {
+        ++unwritten_sparse_images;
+    }
 
     new_image.allocation_tick = frame_tick;
     {
@@ -3263,6 +3266,9 @@ template <class P>
 void TextureCache<P>::DeleteImage(ImageId image_id, bool immediate_delete) {
     ImageBase& image = slot_images[image_id];
     ++images_deleted;
+    if (True(image.flags & ImageFlagBits::UnwrittenSparse)) {
+        --unwritten_sparse_images;
+    }
     // Drop every decode still queued for it, whatever IsDecoding says: an image re-decoded while
     // a decode was in flight has two, and the first to finish clears the flag. A decode left
     // behind was uploaded into the next image to take this slot (another texture's data: garbage
@@ -3400,6 +3406,11 @@ template <class P>
 void TextureCache<P>::MarkModification(ImageBase& image) noexcept {
     image.flags |= ImageFlagBits::GpuModified;
     image.modification_tick = ++modification_tick;
+    // Runs for every render target and written storage image of every draw: only images made
+    // over unwritten sparse memory need the walks below (each alias is another image's memory).
+    if (unwritten_sparse_images == 0) {
+        return;
+    }
     for (const AliasedImage& alias : image.aliased_images) {
         ReplaceUnwrittenSparse(alias.id);
     }
