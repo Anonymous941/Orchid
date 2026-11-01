@@ -1877,10 +1877,11 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             const u32 mask = insn.Bits(72, 4);
             const auto supported_texture = [](const Instruction& texture) {
                 const u32 h = texture.Bits(40, 6), m = texture.Bits(72, 4);
+                // LOD modes 0-3 (auto, LZ, LB, LL); packed 2D, so LB/LL read the value from Rb.
                 return texture.Bits(0, 12) == 0xf60 && h < 16 && !(h & 1) &&
                        (texture.words[1] & ~0x3fffU) == 0x30000000U &&
-                       (texture.words[2] & ~0x04800fffU) == 0x081e0000U &&
-                       !texture.Bits(96, 9) && (m == 1 || m == 3 || m == 15);
+                       (texture.words[2] & ~0x07800fffU) == 0x081e0000U &&
+                       texture.Bits(87, 3) <= 3 && !texture.Bits(96, 9) && m != 0;
             };
             const auto handle_extract = [](const Instruction& shift, u32 packed) {
                 return packed < 16 && !(packed & 1) &&
@@ -1906,7 +1907,8 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             if (!handle_extract(code[shift_index], handle) ||
                 std::any_of(code.begin(), code.end(), [&](const Instruction& instruction) {
                     const u32 op = instruction.Bits(0, 12);
-                    if (op < 0x940 || op > 0x95f || op == 0x94d || op == 0x95b) return false;
+                    // WARPSYNC (0x948) never transfers control, so it cannot enter the window.
+                    if (op < 0x940 || op > 0x95f || op == 0x94d || op == 0x95b || op == 0x948) return false;
                     if (op != 0x947 || (instruction.words[0] & ~0xf000U) != 0x947 ||
                         (instruction.words[2] & ~0x0783ffffU) || instruction.Bits(96, 9))
                         return true;
@@ -1932,11 +1934,21 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 emit(0x5c98000000000000ULL | predicate | target | (u64{15} << 39) |
                      (u64{source} << 20));
             };
+            // Three packed operands (x, y, lod/bias) split 2+1: coordinates in Ra pair, value in Rb.
+            // Maxwell TEX.B wants the handle in Rb and the LOD right after it, hence R246/R247.
+            const u32 lod = insn.Bits(87, 3);
+            const bool has_lod = lod >= 2;
+            if (has_lod && source_a != 255 && ((source_a & 1) || source_a + 2 > 216))
+                return fail(index, "native uniform bindless texture lod operands");
             copy(250, source_a);
-            copy(251, source_b);
+            copy(251, has_lod ? (source_a == 255 ? 255U : source_a + 1) : source_b);
+            if (has_lod) {
+                copy(246, uniform_register(handle));
+                copy(247, source_b);
+            }
             emit(0xde80000000000000ULL | predicate | 250 | (u64{250} << 8) |
-                 (u64{uniform_register(handle)} << 20) | (u64{2} << 28) |
-                 (u64{mask} << 31) | (u64{insn.Bits(87, 1)} << 37) |
+                 (u64{has_lod ? 246U : uniform_register(handle)} << 20) | (u64{2} << 28) |
+                 (u64{mask} << 31) | (u64{lod} << 37) |
                  (u64{insn.Bits(90, 1)} << 49) | (u64{7} << 51));
             for (u32 i = 0; i < components; ++i) {
                 const u32 target = i < 2 ? static_cast<u32>(dest) : second_dest;
