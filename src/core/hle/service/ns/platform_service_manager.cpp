@@ -21,6 +21,7 @@
 #include "core/file_sys/system_archive/system_archive.h"
 #include "core/hle/kernel/k_shared_memory.h"
 #include "core/hle/kernel/kernel.h"
+#include "core/hle/kernel/svc_results.h"
 #include "core/hle/service/cmif_serialization.h"
 #include "common/alignment.h"
 #include "core/hle/service/filesystem/filesystem.h"
@@ -180,6 +181,11 @@ void IPlatformServiceManager::GetBuiltInFontSharedMemory(HLERequestContext& ctx)
     if (!impl->builtin_font_mem) {
         const std::size_t size = Common::AlignUp((std::max<std::size_t>)(impl->builtin_font.size(), 1), 0x1000);
         auto* memory = Kernel::KSharedMemory::Create(kernel);
+        if (memory == nullptr) {
+            IPC::ResponseBuilder rb{ctx, 2};
+            rb.Push(Kernel::ResultOutOfResource);
+            return;
+        }
         const Result result = memory->Initialize(kernel, system.DeviceMemory(), nullptr, Kernel::Svc::MemoryPermission::None,
                                                  Kernel::Svc::MemoryPermission::Read, size);
         if (result.IsError()) {
