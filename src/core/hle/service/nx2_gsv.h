@@ -96,6 +96,13 @@ inline Kernel::KClientSession* CreateRawSession(Core::System& system, HLERequest
     return &session->GetClientSession();
 }
 
+// EDEN_NX2_IMAGE_TRACE: log GPU memory registrations and mappings (checked on every nx2:gpu
+// map, so read once).
+inline bool Nx2ImageTrace() {
+    static const bool trace = std::getenv("EDEN_NX2_IMAGE_TRACE") != nullptr;
+    return trace;
+}
+
 // Replies to a TIPC request with success and raw u32 data words. ResponseBuilder::Push(Result)
 // writes the CMIF two-word result, which shifts TIPC data one word past where the client reads
 // it (and past the copied size); TIPC has a one-word result followed directly by the data.
@@ -473,7 +480,7 @@ private:
         // GpuMemoryHandle that later map jobs (211) name.
         const u32 handle = m_next_memory_handle++;
         m_memory[handle] = {start, last - start + 1};
-        if (std::getenv("EDEN_NX2_IMAGE_TRACE") != nullptr) {
+        if (Nx2ImageTrace()) {
             LOG_INFO(Service, "nx2:gpu mapping register handle={} cpu={:#x} size={:#x}",
                      handle, start, last - start + 1);
         }
@@ -508,7 +515,7 @@ private:
             // Also at the memory's own address: an earlier 213 may have unmapped the mapping 101
             // made there.
             const u64 cpu = it->second.address + c;
-            if (std::getenv("EDEN_NX2_IMAGE_TRACE") != nullptr) {
+            if (Nx2ImageTrace()) {
                 LOG_INFO(Service, "nx2:gpu mapping job handle={} gpu={:#x} cpu={:#x} size={:#x}",
                          handle, a, cpu, b - a + 1);
             }
@@ -565,7 +572,7 @@ private:
         const u32 handle = w[2];
         if (const auto it = m_memory.find(handle); it != m_memory.end()) {
             const auto [address, size] = it->second;
-            if (std::getenv("EDEN_NX2_IMAGE_TRACE") != nullptr) {
+            if (Nx2ImageTrace()) {
                 LOG_INFO(Service, "nx2:gpu mapping destroy handle={} cpu={:#x} size={:#x}",
                          handle, address, size);
             }
