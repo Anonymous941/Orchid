@@ -3558,7 +3558,26 @@ void TextureCache<P>::CopyImage(ImageId dst_id, ImageId src_id, std::vector<Imag
     if (runtime.ShouldReinterpret(dst, src)) {
         return runtime.ReinterpretImage(dst, src, copies);
     }
+    // Conversions between format types render into a 2D view one layer at a time, so a copy that
+    // spans several array layers (e.g. depth -> color for a layered shadow map) is split per layer.
+    std::vector<ImageCopy> layer_copies;
+    layer_copies.reserve(copies.size());
     for (const ImageCopy& copy : copies) {
+        const s32 num_layers = copy.dst_subresource.num_layers;
+        if (num_layers <= 1 || copy.src_subresource.num_layers != num_layers) {
+            layer_copies.push_back(copy);
+            continue;
+        }
+        for (s32 layer = 0; layer < num_layers; ++layer) {
+            ImageCopy single = copy;
+            single.dst_subresource.base_layer += layer;
+            single.src_subresource.base_layer += layer;
+            single.dst_subresource.num_layers = 1;
+            single.src_subresource.num_layers = 1;
+            layer_copies.push_back(single);
+        }
+    }
+    for (const ImageCopy& copy : layer_copies) {
         UNIMPLEMENTED_IF(copy.dst_subresource.num_layers != 1);
         UNIMPLEMENTED_IF(copy.src_subresource.num_layers != 1);
         UNIMPLEMENTED_IF(copy.src_offset != Offset3D{});
