@@ -852,23 +852,16 @@ void DmaPusher::FlushGpuWrittenCommands(GPUVAddr address, size_t size) {
     if (!Tegra::g_nx2_ampere.load(std::memory_order_relaxed) || size == 0) {
         return;
     }
-    // The written-page bits never clear, so they are checked before waiting for the split's back
-    // (draining for every command list stalled the front ~40% of the time in Mario Tennis Fever).
-    // shortcut: a page's very first GPU write, still queued on the back, is missed for one read;
-    // drain first again if a title shows stale command lists on its first frames.
-    if (!Nx2HasGpuWrittenPage(address, size, [&](GPUVAddr page) {
-            return memory_manager.GpuToCpuAddress(page);
-        })) {
-        return;
-    }
-    // The caches belong to the split's back, and the words may be written by work the front
-    // queued that the back has not run yet: it runs all of it first.
-    if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
-        split.Drain();
-    }
-    if (memory_manager.IsMemoryDirty(address, size, VideoCommon::CacheType::BufferCache)) {
-        memory_manager.FlushRegion(address, size, VideoCommon::CacheType::BufferCache);
-    }
+    Nx2SynchronizeGpuWrittenCommands(address, size,
+        [] {
+            if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) split.Drain();
+        },
+        [&](GPUVAddr page) { return memory_manager.GpuToCpuAddress(page); },
+        [&] {
+            if (memory_manager.IsMemoryDirty(address, size, VideoCommon::CacheType::BufferCache)) {
+                memory_manager.FlushRegion(address, size, VideoCommon::CacheType::BufferCache);
+            }
+        });
 }
 
 void DmaPusher::ReportUnboundSubchannel() {

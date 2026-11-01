@@ -25,6 +25,7 @@
 #include "video_core/engines/kepler_compute.h"
 #include "video_core/guest_memory.h"
 #include "video_core/host1x/gpu_device_memory_manager.h"
+#include "video_core/texture_cache/conversion.h"
 #include "video_core/texture_cache/image_view_base.h"
 #include "video_core/texture_cache/physical_alias.h"
 #include "video_core/texture_cache/samples_helper.h"
@@ -3558,26 +3559,7 @@ void TextureCache<P>::CopyImage(ImageId dst_id, ImageId src_id, std::vector<Imag
     if (runtime.ShouldReinterpret(dst, src)) {
         return runtime.ReinterpretImage(dst, src, copies);
     }
-    // Conversions between format types render into a 2D view one layer at a time, so a copy that
-    // spans several array layers (e.g. depth -> color for a layered shadow map) is split per layer.
-    std::vector<ImageCopy> layer_copies;
-    layer_copies.reserve(copies.size());
-    for (const ImageCopy& copy : copies) {
-        const s32 num_layers = copy.dst_subresource.num_layers;
-        if (num_layers <= 1 || copy.src_subresource.num_layers != num_layers) {
-            layer_copies.push_back(copy);
-            continue;
-        }
-        for (s32 layer = 0; layer < num_layers; ++layer) {
-            ImageCopy single = copy;
-            single.dst_subresource.base_layer += layer;
-            single.src_subresource.base_layer += layer;
-            single.dst_subresource.num_layers = 1;
-            single.src_subresource.num_layers = 1;
-            layer_copies.push_back(single);
-        }
-    }
-    for (const ImageCopy& copy : layer_copies) {
+    for (const ImageCopy& copy : MakeImageCopyLayers(copies)) {
         UNIMPLEMENTED_IF(copy.dst_subresource.num_layers != 1);
         UNIMPLEMENTED_IF(copy.src_subresource.num_layers != 1);
         UNIMPLEMENTED_IF(copy.src_offset != Offset3D{});
@@ -3595,14 +3577,15 @@ void TextureCache<P>::CopyImage(ImageId dst_id, ImageId src_id, std::vector<Imag
         const SubresourceExtent src_extent{.levels = 1, .layers = 1};
         const SubresourceRange dst_range{.base = dst_base, .extent = dst_extent};
         const SubresourceRange src_range{.base = src_base, .extent = src_extent};
-        PixelFormat dst_format = dst.info.format;
+        PixelFormat dst_format = GetAliasConversionFormat(dst.info.format, src.info.format);
+        const PixelFormat src_format = GetAliasConversionFormat(src.info.format, dst.info.format);
         if (GetFormatType(src.info.format) == SurfaceType::DepthStencil &&
             GetFormatType(dst_format) == SurfaceType::ColorTexture &&
             BytesPerBlock(dst_format) == 4) {
             dst_format = PixelFormat::A8B8G8R8_UNORM;
         }
         const ImageViewInfo dst_view_info(ImageViewType::e2D, dst_format, dst_range);
-        const ImageViewInfo src_view_info(ImageViewType::e2D, src.info.format, src_range);
+        const ImageViewInfo src_view_info(ImageViewType::e2D, src_format, src_range);
         const auto [dst_framebuffer_id, dst_view_id] = RenderTargetFromImage(dst_id, dst_view_info);
         Framebuffer* const dst_framebuffer = &slot_framebuffers[dst_framebuffer_id];
         const ImageViewId src_view_id = FindOrEmplaceImageView(src_id, src_view_info);

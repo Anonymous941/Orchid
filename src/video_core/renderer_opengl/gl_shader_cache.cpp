@@ -54,7 +54,7 @@ using VideoCommon::LoadPipelines;
 using VideoCommon::SerializePipeline;
 using Context = ShaderContext::Context;
 
-constexpr u32 CACHE_VERSION = 16; // 16: environments carry the surface descriptor buffer (~0U unset)
+constexpr u32 CACHE_VERSION = 17;
 
 template <typename Container>
 auto MakeSpan(Container& container) {

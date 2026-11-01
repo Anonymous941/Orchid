@@ -110,12 +110,13 @@ GeometryExitEnvelope AnalyzeGeometryExit(const Code& code) {
         };
         read_predicate(guard & 7);
         if (is_exit(index)) {
+            if (guard != 7)
+                return fail(index, "native instruction before exit setup state is dead");
             // The handler finalizes the output through R0; the rest of the setup state may stay
             // live when the body ends without reading it.
             if ((live_registers & 1) || (read_predicates & live_predicates))
                 return fail(index, "native exit handler reads exit setup state");
-            if (guard == 7) break;
-            continue;
+            break;
         }
         if (opcode == 0x919 || opcode == 0x923) {
             if (opcode == 0x923) read_register(bits(index, 24, 8));
