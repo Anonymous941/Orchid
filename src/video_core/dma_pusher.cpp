@@ -852,6 +852,31 @@ void DmaPusher::FlushGpuWrittenCommands(GPUVAddr address, size_t size) {
     if (!Tegra::g_nx2_ampere.load(std::memory_order_relaxed) || size == 0) {
         return;
     }
+    if (Tegra::Nx2CheckCommandPagesFirst()) {
+        // While pages are still marked for the first time (start-up, scene loads) a first write
+        // may be queued on the back: drain first for a while after each new mark. Afterwards
+        // only command lists on pages the GPU has written wait for the back.
+        const u64 generation = Tegra::g_nx2_gpu_written_generation.load(std::memory_order_relaxed);
+        if (generation != command_check_generation) {
+            command_check_generation = generation;
+            command_checks_since_mark = 0;
+        }
+        if (command_checks_since_mark >= CommandChecksBeforeBitsFirst) {
+            if (!Nx2HasGpuWrittenPage(address, size, [&](GPUVAddr page) {
+                    return memory_manager.GpuToCpuAddress(page);
+                })) {
+                return;
+            }
+            if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
+                split.Drain();
+            }
+            if (memory_manager.IsMemoryDirty(address, size, VideoCommon::CacheType::BufferCache)) {
+                memory_manager.FlushRegion(address, size, VideoCommon::CacheType::BufferCache);
+            }
+            return;
+        }
+        ++command_checks_since_mark;
+    }
     Nx2SynchronizeGpuWrittenCommands(address, size,
         [] {
             if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) split.Drain();

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -43,6 +44,9 @@ inline bool Nx2NeedsBufferDownloads() {
 // reads the command list. One bit per 4 KiB of the 36-bit device address space (2 MiB).
 inline constexpr u64 Nx2WrittenPageBits = 12;
 inline std::array<std::atomic<u64>, (u64{1} << (36 - Nx2WrittenPageBits)) / 64> g_nx2_gpu_written_pages{};
+/// Counts the times pages were marked GPU-written for the first time: it stops moving once a
+/// title has written all the memory it reuses (Nx2CheckCommandPagesFirst).
+inline std::atomic<u64> g_nx2_gpu_written_generation{};
 
 inline void Nx2MarkGpuWritten(u64 device_address, u64 size) {
     if (size == 0) {
@@ -57,7 +61,9 @@ inline void Nx2MarkGpuWritten(u64 device_address, u64 size) {
         const u64 bits = (~u64{0} >> (63 - high)) & (~u64{0} << low);
         auto& word = g_nx2_gpu_written_pages[index];
         if ((word.load(std::memory_order_relaxed) & bits) != bits) {
-            word.fetch_or(bits, std::memory_order_relaxed);
+            if ((word.fetch_or(bits, std::memory_order_relaxed) & bits) != bits) {
+                g_nx2_gpu_written_generation.fetch_add(1, std::memory_order_relaxed);
+            }
         }
     }
 }
@@ -103,6 +109,28 @@ void Nx2SynchronizeGpuWrittenCommands(GPUVAddr address, size_t size, Drain&& dra
     if (size == 0) return;
     drain();
     if (Nx2HasGpuWrittenPage(address, size, translate)) flush();
+}
+
+/// Whether the GPU thread split's front may check a command list's GPU-written page bits before
+/// waiting for the back, once no page has been marked for the first time in a while
+/// (DmaPusher::FlushGpuWrittenCommands). Draining first for every GPFIFO entry stalled Mario Tennis
+/// Fever's front ~40% of the time; checking first misses only a page's very first GPU write while
+/// it is still queued on the back. EDEN_NX2_CMD_DRAIN=1 always drains first, =0 checks first for
+/// every title.
+inline bool Nx2CheckCommandPagesFirst() {
+    static const int forced = [] {
+        const char* value = std::getenv("EDEN_NX2_CMD_DRAIN");
+        return value == nullptr ? -1 : (value[0] == '0' ? 1 : 0);
+    }();
+    if (forced >= 0) {
+        return forced == 1;
+    }
+    switch (g_nx2_program_id.load(std::memory_order_relaxed)) {
+    case 0x0400D4201C6EA000ULL: // Mario Tennis Fever
+        return true;
+    default:
+        return false;
+    }
 }
 
 // NVN2 queues release their progress values into the second page of a two-page GPU-accessible
