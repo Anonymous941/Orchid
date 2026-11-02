@@ -121,8 +121,8 @@ EnvironmentInfo DetectEnvironment(const VideoCore::RendererBase& renderer) {
 
 // A title default only where the user kept the global value; set as the per-game value, which
 // RestoreGlobalState drops again when emulation stops (the global config is never touched).
-template <typename T>
-static void OverrideIfGlobal(Settings::SwitchableSetting<T, true>& setting, T value) {
+template <typename T, bool ranged>
+static void OverrideIfGlobal(Settings::SwitchableSetting<T, ranged>& setting, T value) {
     if (!setting.UsingGlobal()) {
         return;
     }
@@ -132,6 +132,7 @@ static void OverrideIfGlobal(Settings::SwitchableSetting<T, true>& setting, T va
 
 void LoadOverrides(std::uint64_t program_id, const VideoCore::RendererBase& renderer) {
     const auto env = DetectEnvironment(renderer);
+    Settings::values.preemptive_cpu_reads = false;
 
     switch (static_cast<TitleID>(program_id)) {
         case TitleID::NinjaGaidenRagebound:
@@ -142,6 +143,18 @@ void LoadOverrides(std::uint64_t program_id, const VideoCore::RendererBase& rend
             // occlusion reports in the query cache, or its conditional rendering hides the characters.
             OverrideIfGlobal(Settings::values.gpu_accuracy, Settings::GpuAccuracy::Low);
             OverrideIfGlobal(Settings::values.gpu_fence_behavior, Settings::GpuFenceBehavior::Balanced);
+            break;
+        case TitleID::HyruleWarriorsAgeOfImprisonment:
+            // Game time follows the guest counter, which a faster CPU clock scales (Boost ran the
+            // game at 1.7x speed); low accuracy for the GPU thread split. Balanced fences signal
+            // syncpoints once the host GPU is done: earlier, the game reads GPU-written buffers
+            // right away and each read waits for the whole host GPU queue.
+            OverrideIfGlobal(Settings::values.cpu_clock, Settings::CpuClock::Normal);
+            OverrideIfGlobal(Settings::values.gpu_accuracy, Settings::GpuAccuracy::Low);
+            OverrideIfGlobal(Settings::values.gpu_fence_behavior, Settings::GpuFenceBehavior::Balanced);
+            // The game reads GPU-written buffer pages every frame; each ordered read waited for the
+            // whole host GPU queue (about 7 ms, 45 instead of 60 fps in combat).
+            Settings::values.preemptive_cpu_reads = true;
             break;
         default:
             break;
