@@ -7,7 +7,7 @@
 // nx2-merged's additions), kept verbatim in its own namespace. It lowers forms for games this fork
 // has no shader dumps of (Splatoon Raiders, mesh and task programs, ...). LowerToMaxwellUpstream runs it only when this fork's lowering rejects a
 // program, so every program is lowered by one implementation from start to end.
-// shortcut: on the next upstream merge, copy their lower_to_maxwell.h into the namespace below again.
+// ponytail: on the next upstream merge, copy their lower_to_maxwell.h into the namespace below again.
 
 #pragma GCC diagnostic ignored "-Wshadow"
 // Encoding reference: Mesa NAK sm70_encode.rs (MIT), Copyright 2022 Collabora, Ltd.
