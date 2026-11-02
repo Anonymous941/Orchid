@@ -4,6 +4,12 @@
 rdenno's fixes on top of it, merged with this fork's Mario Tennis Fever and Hyrule Warriors work.
 It is a big merge: if a game runs worse than in 0.5.0, please report it and keep 0.5.0 around.
 
+### Faster -pgo builds
+
+- The `-pgo` downloads are now built against Eglantine's own profile instead of Eden's Switch 1
+  profile. With Eden's, Mario Kart World ran at about half the speed of the normal build;
+  if you switched away from the `-pgo` build because it was slower, try it again.
+
 ### Mario Tennis Fever (from rdenno)
 
 - **Scenery around the court is drawn again:** the game samples its depth buffer in a format that

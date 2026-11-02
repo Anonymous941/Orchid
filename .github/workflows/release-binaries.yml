@@ -13,9 +13,9 @@ on:
 permissions:
   contents: read
 
-# Clang major the Linux PGO build uses, from apt.llvm.org. Eden's profile is written by a current
-# clang and an older reader refuses it, so this has to stay at or above whatever produced
-# eden.profdata; bump it when a refreshed profile needs a newer LLVM.
+# Clang major the Linux PGO build uses, from apt.llvm.org. A profile is written by a current clang
+# and an older reader refuses it, so this has to stay at or above whatever produced
+# eglantine.profdata; bump it when a refreshed profile needs a newer LLVM.
 env:
   PGO_LLVM_VERSION: '23'
 
@@ -90,9 +90,11 @@ jobs:
             runner: ubuntu-24.04
           - platform: macos-arm64
             runner: macos-15
-          # The two -pgo builds are the same programs compiled by clang against Eden's periodically
-          # updated profile (https://github.com/Eden-CI/PGO). Windows uses MSYS2's MinGW clang like
-          # Eden does; MSVC cannot read an LLVM .profdata file.
+          # The -pgo builds are the same programs compiled by clang against the repo's
+          # eglantine.profdata. Eden's profile (Eden-CI/PGO) comes from Switch 1 games: with it Mario
+          # Kart World ran at about half the speed of the normal build, with eglantine.profdata at
+          # about the same speed. Windows uses MSYS2's MinGW clang like Eden does; MSVC cannot read
+          # an LLVM .profdata file.
           - platform: linux-x86_64-pgo
             runner: ubuntu-24.04
             pgo: true
@@ -189,16 +191,13 @@ jobs:
             "clang-$PGO_LLVM_VERSION" "lld-$PGO_LLVM_VERSION"
           "clang-$PGO_LLVM_VERSION" --version
 
-      # Fetched into the source tree so both the Linux and MSYS2 configure steps can read it from a
-      # path their clang understands.
-      - name: Download PGO profile
+      # The profile is in the source tree, where both the Linux and MSYS2 configure steps read it.
+      - name: Check PGO profile
         if: matrix.pgo
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL -o eden.profdata \
-            https://github.com/Eden-CI/PGO/releases/latest/download/eden.profdata
-          test -s eden.profdata
+          test -s eglantine.profdata
 
       - name: Set up MSVC
         if: matrix.platform == 'windows-x86_64'
@@ -302,7 +301,7 @@ jobs:
           )
           if [ '${{ matrix.pgo }}' = 'true' ]; then
             # Same flags Eden's CI passes for its clang PGO build.
-            profile="-fprofile-use=$PWD/eden.profdata -Wno-backend-plugin \
+            profile="-fprofile-use=$PWD/eglantine.profdata -Wno-backend-plugin \
               -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
             flags+=(
               "-DCMAKE_C_COMPILER=clang-$PGO_LLVM_VERSION"
@@ -362,14 +361,14 @@ jobs:
           -DCMAKE_C_COMPILER_LAUNCHER=sccache
           -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
-      # MinGW build: system Qt and libraries from MSYS2, clang plus Eden's PGO profile. The profile
+      # MinGW build: system Qt and libraries from MSYS2, clang plus the repo's PGO profile. The profile
       # path is converted to its Windows form because clang runs with the MSYS mount underneath.
       - name: Configure MinGW PGO
         if: matrix.mingw
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          profile="-fprofile-use=$(cygpath -m "$PWD/eden.profdata") -Wno-backend-plugin \
+          profile="-fprofile-use=$(cygpath -m "$PWD/eglantine.profdata") -Wno-backend-plugin \
             -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
           cmake -S . -B build/release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
@@ -658,7 +657,7 @@ jobs:
           Linux (AppImage): make it executable (chmod +x) and run it; it bundles its libraries and needs glibc 2.39 or newer (Ubuntu 24.04, Fedora 40, Debian 13, Arch).
           Linux (tar.gz): extract it and run ./eglantine or ./eden-cli; it uses your system libraries, so Qt 6 and the usual libraries must be installed.
           macOS: Apple Silicon and macOS 15 or newer. Extract the zip and move eglantine.app to Applications. The CLI is inside eglantine.app/Contents/MacOS/eden-cli. The app bundles Qt and MoltenVK and is ad-hoc signed, not notarized; macOS may require approval in Privacy & Security. macOS support remains experimental and uses the JIT, not NCE.
-          The -pgo builds are the same programs compiled with profile-guided optimization (clang plus Eden's profile); prefer them when your CPU supports it. The Windows PGO build is a MinGW build, so it carries its own DLLs and needs no Visual C++ redistributable.
+          The -pgo builds are the same programs compiled with profile-guided optimization (clang plus the repo's eglantine.profdata); prefer them when your CPU supports it. The Windows PGO build is a MinGW build, so it carries its own DLLs and needs no Visual C++ redistributable.
 
           Eglantine looks for newer builds of its channel at startup and from Help > Check for Updates.
           EOF
