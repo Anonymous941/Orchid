@@ -1,31 +1,14 @@
 name: release-binaries
 
+# Manual only: Actions > release-binaries > Run workflow, or `gh workflow run release-binaries.yml --ref <branch>`.
+# Pushes and pull requests never start a build.
 on:
-  pull_request:
-    branches:
-      - nx2
-      - nx2-experimental
   workflow_dispatch:
     inputs:
       publish_release:
         description: Publish the binaries as a GitHub release
         type: boolean
         default: true
-  push:
-    branches:
-      - nx2
-      - nx2-experimental
-    # A binary only changes when build inputs change; docs-only pushes skip the build.
-    paths:
-      - "src/**"
-      - "CMakeLists.txt"
-      - "CMakeModules/**"
-      - "externals/**"
-      - "dist/**"
-      - "tools/**"
-      - ".patch/**"
-      - "cpmfile.json"
-      - ".github/workflows/release-binaries.yml"
 
 permissions:
   contents: read
@@ -558,7 +541,7 @@ jobs:
   release:
     name: Publish release
     needs: [name, build]
-    if: github.event_name == 'push' || inputs.publish_release
+    if: inputs.publish_release
     runs-on: ubuntu-24.04
     permissions:
       contents: write
