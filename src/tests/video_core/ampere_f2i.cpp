@@ -87,7 +87,7 @@ TEST_CASE("Ampere byte F2I rejects other widths, rounding, modifiers and registe
         invalid[0].words[1] = source;
         REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(invalid)));
     }
-    for (const u32 source : {28U, 62U, 64U, 216U}) {
+    for (const u32 source : {64U, 216U}) { // UR28-UR62 map to R180-R214
         auto invalid = code;
         invalid[0].words = {0x00157d05, source, 0x0821e100, 0x0001e400};
         REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(invalid)));
@@ -160,8 +160,9 @@ TEST_CASE("Ampere ceiling F2I rejects non-NTZ, other widths and unknown modifier
         REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(invalid)));
     }
     auto invalid = code;
+    // |Rs| (bit 62) is applied by an FADD before the conversion.
     invalid[0].words[1] = 0x40000002;
-    REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(invalid)));
+    REQUIRE(static_cast<bool>(LowerToMaxwell(invalid)));
     invalid = code;
     invalid[0].words[3] |= 1;
     REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(invalid)));
@@ -279,7 +280,7 @@ TEST_CASE("Ampere uniform votes reject unmapped registers and unsupported fields
         {{0x00107886, 0, 0x038e0100, 0x000fe400}},
         {{0x0000794d, 0, 0x03800000, 0}},
     }};
-    for (const u32 target : {28U, 62U, 64U}) {
+    for (const u32 target : {64U}) { // UR28-UR62 map to R180-R214
         auto invalid = code;
         invalid[0].words[0] = 0x00007886U | (target << 16);
         REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(invalid)));
@@ -474,7 +475,7 @@ TEST_CASE("Ampere per-tap gathers reject unknown offsets precision and register 
             REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(invalid)));
         }
     }
-    for (const u32 bit : {60U, 72U, 76U, 78U, 79U, 80U, 81U, 89U, 91U}) {
+    for (const u32 bit : {60U, 72U, 76U, 78U, 80U, 81U, 89U, 91U}) { // 79 (.F16) packs half pairs
         auto invalid = code;
         invalid[2].words[bit / 32] ^= 1U << (bit % 32);
         REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(invalid)));
