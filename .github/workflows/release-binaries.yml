@@ -264,16 +264,18 @@ jobs:
             cpm-${{ runner.os }}-${{ runner.arch }}-
 
       # The sha in the key makes every run save a fresh cache (actions/cache never saves over an
-      # exact hit), and restore-keys seeds it from the newest one of the same platform.
+      # exact hit), and restore-keys seeds it from the newest one of the same platform. The "sha-"
+      # part ends the platform name: without it "objects-linux-x86_64-" also matched the -pgo
+      # job's clang cache, and the gcc build restored that one and recompiled everything.
       - name: Cache compiler objects
         uses: actions/cache@v5
         with:
           path: |
             .ccache
             .sccache
-          key: objects-${{ matrix.platform }}-${{ github.sha }}
+          key: objects-${{ matrix.platform }}-sha-${{ github.sha }}
           restore-keys: |
-            objects-${{ matrix.platform }}-
+            objects-${{ matrix.platform }}-sha-
 
       - name: Configure Linux
         if: startsWith(matrix.platform, 'linux')
@@ -574,7 +576,7 @@ jobs:
           path: |
             .ccache
             .sccache
-          key: objects-${{ matrix.platform }}-${{ github.sha }}
+          key: objects-${{ matrix.platform }}-sha-${{ github.sha }}
 
   # Publishes every binary as a GitHub release (a pre-release outside stable) once every platform
   # built: on pushes to nx2 and nx2-experimental, and on manual runs unless "Publish the binaries as
@@ -657,7 +659,7 @@ jobs:
           Linux (AppImage): make it executable (chmod +x) and run it; it bundles its libraries and needs glibc 2.39 or newer (Ubuntu 24.04, Fedora 40, Debian 13, Arch).
           Linux (tar.gz): extract it and run ./eglantine or ./eden-cli; it uses your system libraries, so Qt 6 and the usual libraries must be installed.
           macOS: Apple Silicon and macOS 15 or newer. Extract the zip and move eglantine.app to Applications. The CLI is inside eglantine.app/Contents/MacOS/eden-cli. The app bundles Qt and MoltenVK and is ad-hoc signed, not notarized; macOS may require approval in Privacy & Security. macOS support remains experimental and uses the JIT, not NCE.
-          The -pgo builds are the same programs compiled with profile-guided optimization (clang plus the repo's eglantine.profdata); prefer them when your CPU supports it. The Windows PGO build is a MinGW build, so it carries its own DLLs and needs no Visual C++ redistributable.
+          The -pgo builds are the same programs compiled with profile-guided optimization (clang plus the repo's eglantine.profdata) and run on the same CPUs; if one is slower than the normal build for you, please report it. The Windows PGO build is a MinGW build, so it carries its own DLLs and needs no Visual C++ redistributable.
 
           Eglantine looks for newer builds of its channel at startup and from Help > Check for Updates.
           EOF
