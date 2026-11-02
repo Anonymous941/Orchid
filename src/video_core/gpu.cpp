@@ -119,6 +119,12 @@ struct GPU::Impl {
 
     /// Synchronizes CPU writes with Host GPU memory.
     void InvalidateGPUCache() {
+        // Runs for every fence. With no CPU write to GPU-cached memory collected since the last
+        // one there is nothing to invalidate: don't move the readback generation either (each
+        // move makes the CPU's remembered readback areas useless).
+        if (!system.HasGPUDirtyMemory()) {
+            return;
+        }
         gpu_thread.BeginAsyncGuestWrite();
         SCOPE_EXIT { gpu_thread.EndAsyncGuestWrite(); };
         std::function<void(PAddr, size_t)> callback_writes([this](PAddr address, size_t size) {

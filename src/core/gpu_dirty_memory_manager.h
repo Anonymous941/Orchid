@@ -48,6 +48,12 @@ public:
                                                 std::memory_order_relaxed));
     }
 
+    /// Whether a CPU write was collected since the last Gather (without the lock).
+    [[nodiscard]] bool HasPending() const {
+        return has_back.load(std::memory_order_acquire) ||
+               current.load(std::memory_order_acquire).mask != 0;
+    }
+
     void Gather(std::function<void(PAddr, size_t)>& callback) {
         // Called for every GPU fence (thousands a second for Switch 2 titles), for each core,
         // while the CPU rarely writes GPU-cached memory: nothing collected, no lock.
