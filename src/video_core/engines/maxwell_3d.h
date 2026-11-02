@@ -3181,6 +3181,10 @@ public:
                          u32 argument, bool is_last_call);
     void FrontCallMultiMethod(Core::System& system, VideoCommon::GpuSplit& split, u32 method,
                               const u32* base_start, u32 amount, u32 methods_pending);
+    /// Split front: whether the macro waiting for its remaining parameters takes them, written
+    /// by the GPU at `address`, as an indirect draw record, so they need no flush.
+    bool FrontTakesIndirectParameters(Core::System& system, GPUVAddr address, u32 entry_words,
+                                      u32 method_count);
 
     bool ShouldExecute() const {
         return execute_on;
@@ -3354,6 +3358,9 @@ private:
     void FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& state, u32 method, u32 count);
     void FrontVerify(VideoCommon::GpuSplit& split, FrontState& state);
     void FinishFrontMacro(Core::System& system);
+    void FrontDrawIndirect(Core::System& system, VideoCommon::GpuSplit& split, FrontState& state,
+                           GPUVAddr record, bool indexed);
+    void BackDrawIndirect(Core::System& system, GPUVAddr record, u32 topology, bool indexed);
     std::unique_ptr<FrontState> front;
     bool front_macros{};
     // EDEN_NX2_SPLIT_VERIFY: the last SET_SHADOW_RAM_CONTROL writes each side saw (argument,
