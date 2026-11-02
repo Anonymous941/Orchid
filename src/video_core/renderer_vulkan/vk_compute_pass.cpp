@@ -748,9 +748,13 @@ void ASTCDecoderPass::AssembleInto(const VideoCommon::ImageInfo& info, u32 skip,
     // waits. Switch 2 textures only submit by default: Mario Kart World streams them while it
     // draws, and each wait (20-50 ms) stalled the frame. The decoded image is used after the
     // barrier above on the same queue either way, as the BCn transcode path does without waiting.
+    // Switch 2 textures neither wait nor submit by default any more: a submit per decoded
+    // texture (each new texture on cards that keep ASTC uncompressed) also reset the recorded
+    // state for the next draw. The barrier orders the decode before any use, as for the BCn
+    // transcode (wait = false). EDEN_NX2_ASTC_FLUSH=1 submits after each decode again.
     static const char* const flush_setting = std::getenv("EDEN_NX2_ASTC_FLUSH");
     const bool flush_only = flush_setting != nullptr ? flush_setting[0] == '1' : info.native_tiling;
-    if (!target.wait) {
+    if (!target.wait || (flush_setting == nullptr && info.native_tiling)) {
         return;
     }
     const auto start = std::chrono::steady_clock::now();
