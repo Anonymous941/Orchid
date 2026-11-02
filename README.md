@@ -37,10 +37,10 @@ Mario Tennis Fever first, plus the shader, kernel and graphics work other games 
 | Branch | Channel | Release name |
 |---|---|---|
 | `mario-tennis-fever` | stable | `v0.<minor>.<patch>`, regular release |
-| `mario-tennis-fever-perf` | experimental | `v0.<minor>.<patch>-experimental`, pre-release |
 | `nx2` | mirror of zortos293/Eglantine | no releases from this fork |
 
-`.github/version` sets the minor version and channel per branch; CI counts the patch up.
+`.github/version` sets the minor version; CI counts the patch up. The former experimental branch
+`mario-tennis-fever-perf` was merged into `mario-tennis-fever` in 0.5.
 
 Commits land often, but they do not start a build. Release builds are started by hand
 (Actions > release-binaries > Run workflow), so the newest release can be several commits behind
@@ -93,8 +93,7 @@ sudo pacman -Syu --needed base-devel boost catch2 cmake enet ffmpeg fmt git glsl
 
 Ubuntu 26.04, Debian 13 and other distributions: see [docs/Deps.md](docs/Deps.md).
 
-Clone the branch you want (`mario-tennis-fever` for stable, `mario-tennis-fever-perf` for
-experimental), configure and build:
+Clone `mario-tennis-fever`, configure and build:
 
 ```sh
 git clone -b mario-tennis-fever https://github.com/MythosOfs/Eglantine.git
@@ -111,9 +110,6 @@ Later, to move to the newest commit (only changed files get rebuilt):
 git pull
 cmake --build build
 ```
-
-To change channel in the same folder: `git switch mario-tennis-fever-perf`, then
-`cmake --build build`.
 
 The first configure downloads further dependencies into `.cache/cpm`; the two Vulkan flags use the
 bundled headers, as the release builds do, so a newer system Vulkan package cannot break the build. A self-built binary has no
