@@ -114,8 +114,11 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
                     active_link = call_links[call];
                 }
             }
-            // RET has no destination GPR; bits 16..23 are reserved, not a write to R0.
-            if (active_link && opcode != 0x950 && insn.Bits(16, 8) == *active_link)
+            // RET has no destination GPR; bits 16..23 are reserved, not a write to R0. Neither do the
+            // ISETP/FSETP predicate forms (bits 16..23 are unused there).
+            const bool predicate_only = opcode == 0x20c || opcode == 0x80c || opcode == 0xa0c || opcode == 0xc0c ||
+                                        opcode == 0x20b || opcode == 0x80b || opcode == 0xa0b || opcode == 0xc0b;
+            if (active_link && opcode != 0x950 && !predicate_only && insn.Bits(16, 8) == *active_link)
                 return fail(index, "native callee overwrites link register");
         }
         // Scratch values and emulated uniform state occupy reserved high GPRs.
@@ -1502,6 +1505,24 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                  (u64{insn.Bits(40, 24)} << 20) | (u64{1} << 45) | (u64{size} << 48));
             break;
         }
+        case 0x9af: // LDGDEPBAR: the copies below complete before they return, so the commit group is already done.
+            break;
+        case 0xfae: { // LDGSTS.E.BYPASS.128 [Ra+soff], [Rg.64+goff], Pp: 16-byte async global->shared copy.
+            // Done as a synchronous LDG + STS through R248-R251. Word0: Ra 16-23, Rg 24-31; word1: goff 0-11
+            // (signed), soff 12-31; Pp 87-90 is the copy predicate, false zero-fills the destination (the
+            // predicated cp.async form). Descriptors are dropped as in LDG.
+            const u32 shared = insn.Bits(16, 8), global = insn.Bits(24, 8);
+            const s32 goff = static_cast<s32>(insn.words[1] << 20) >> 20;
+            const u32 soff = insn.words[1] >> 12;
+            if (native_predicate != 7 || (global & 1) || global >= 246 || shared >= 246 || soff > 0xffffU)
+                return fail(index, "native async copy mode");
+            for (u32 i = 0; i < 4; ++i) mov_imm(248 + i, 0);
+            const u64 copy_guard = u64{(insn.Bits(90, 1) << 3) | insn.Bits(87, 3)} << 16;
+            emit(0xeed0000000000000ULL | copy_guard | 248 | (u64{global} << 8) |
+                 (u64{static_cast<u32>(goff) & 0xffffffU} << 20) | (u64{1} << 45) | (u64{6} << 48));
+            emit(0xef58000000000000ULL | predicate | 248 | (u64{shared} << 8) | (u64{soff} << 20) | (u64{6} << 48));
+            break;
+        }
         case 0x386: case 0x986: { // Global store of 32/64/128 bits, 64-bit address.
             u32 data = insn.Bits(32, 8);
             const u32 size = insn.Bits(73, 3);
@@ -1746,7 +1767,8 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             break;
         }
         case 0x91a: // DEPBAR.LE SB5, 1: scoreboard wait, represented by IR data dependencies.
-            if (insn.words[0] != 0x791a || (insn.words[1] & ~0xfc0U) != 0xd000 || insn.words[2]) {
+            // ponytail: any scoreboard (bits 12-14) and count (6-7) are accepted: async copies are synchronous here.
+            if (insn.words[0] != 0x791a || (insn.words[1] & 0x3fU) || !(insn.words[1] & 0x8000U) || insn.words[2]) {
                 return fail(index, "native dependency barrier mode");
             }
             break;
@@ -2329,6 +2351,20 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
         }
         case 0x308: case 0x908: case 0xb08: case 0xd08: { // MUFU
             const u32 operation = insn.Bits(74, 6);
+            if (opcode == 0x308 && operation == 9 && !insn.Bits(73, 1) && !insn.Bits(80, 12)) {
+                // Round 6: MUFU.TANH (op 9, sm75+), which Maxwell lacks. tanh(x) = 1 - 2 / (exp(2x) + 1)
+                // from EX2, RCP and FADD/FMUL, through scratch R249/R250 like the other expansions here.
+                // ponytail: plain f32 expansion, about 1e-7 absolute error near 0; not bit-exact to MUFU.
+                const u32 source = operand(1);
+                emit(0x1e00000000000000ULL | predicate | 250 | (u64{source} << 8) | (u64{0x4038aa3bU} << 20)); // 2*log2(e)
+                emit(0x5080000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{2} << 20));           // EX2: e^2x
+                mov_imm(249, 0x3f800000U);                                                                  // 1.0
+                emit(0x5c58000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{249} << 20));        // e^2x + 1
+                emit(0x5080000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{4} << 20));           // RCP
+                emit(0x1e00000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{0xc0000000U} << 20)); // * -2
+                emit(base(0x5c58000000000000ULL) | (u64{250} << 8) | (u64{249} << 20));                    // + 1
+                break;
+            }
             if (opcode == 0xd08 && (insn.words[2] != 0x08001000U ||
                                    insn.Bits(24, 8) || insn.words[1] > 63 || insn.Bits(96, 9)))
                 return fail(index, "native uniform reciprocal mode");
@@ -2500,6 +2536,18 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                  (u64{insn.Bits(87, 4)} << 39) | (u64{insn.Bits(72, 1)} << 43) |
                  (u64{insn.Bits(73, 1)} << 44) | (u64{insn.Bits(69, 2)} << 45) |
                  (u64{insn.Bits(74, 2)} << 47) | (u64{insn.Bits(71, 1)} << 49));
+            break;
+        }
+        case 0x433: { // HSET2 Rd, |Ra|, imm half pair: per-half mask (0xffff when the compare holds, no .BF).
+            // Maxwell HSET2 takes the pair from a register, so the immediate goes through R249.
+            // Only the forms the Fortune's Weave programs use (And combine, PT accumulator, no P/Q outputs).
+            const u32 a = insn.Bits(24, 8);
+            if (insn.Bits(71, 1) || insn.Bits(80, 1) || insn.Bits(69, 2) || insn.Bits(74, 2) ||
+                insn.Bits(87, 4) != 7 || insn.Bits(81, 6) || insn.Bits(91, 1) || (a >= 246 && a != 255))
+                return fail(index, "native half set mode");
+            mov_imm(249, insn.words[1]);
+            emit(base(0x5d18000000000000ULL) | (u64{a} << 8) | (u64{249} << 20) | (u64{insn.Bits(76, 4)} << 35) |
+                 (u64{7} << 39) | (u64{insn.Bits(72, 1)} << 43) | (u64{insn.Bits(73, 1)} << 44));
             break;
         }
         case 0x434: { // HSETP2 with an immediate half pair: A swizzle 74-75 (neg 72, abs 73),
