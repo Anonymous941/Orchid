@@ -1,23 +1,9 @@
 name: tests
 
+# Manual only: Actions > tests > Run workflow, or `gh workflow run tests.yml --ref <branch>`.
+# Pushes and pull requests never start a build.
 on:
-  pull_request:
-    branches:
-      - nx2
-      - nx2-experimental
-  push:
-    branches:
-      - nx2
-      - nx2-experimental
-    paths:
-      - "src/**"
-      - "CMakeLists.txt"
-      - "CMakeModules/**"
-      - "externals/**"
-      - "tools/windows/**"
-      - ".patch/**"
-      - "cpmfile.json"
-      - ".github/workflows/tests.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
