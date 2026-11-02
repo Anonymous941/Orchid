@@ -41,28 +41,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Every build is named <channel>-build-<run number>: its release tag, its version string, and the
-  # prefix of its release files. The channel is the branch, or pr-<number> for pull requests, which
-  # are never released. The update checker only offers releases from the build's own channel.
+  # Every build is named v0.<minor>.<patch>, with -<channel> appended on every channel but stable:
+  # its release tag, its version string, and the prefix of its release files. The branch picks
+  # minor and channel in .github/version ("0.4" on the stable branch, "0.4-experimental" on the
+  # experimental one); the patch counts up from 0 per minor and channel. Pull requests get a
+  # -pr<number> channel that is never released. The update checker only offers its own channel.
   name:
     name: Name the build
     runs-on: ubuntu-24.04
     outputs:
       channel: ${{ steps.name.outputs.channel }}
       tag: ${{ steps.name.outputs.tag }}
+      previous: ${{ steps.name.outputs.previous }}
     steps:
+      - name: Check out version file
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/version
+          sparse-checkout-cone-mode: false
+
       - id: name
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.number }}
         run: |
+          set -euo pipefail
+          read -r base < .github/version
+          minor=${base%%-*}
+          suffix=${base#"$minor"}
+          [[ $minor =~ ^0\.[0-9]+$ && ( -z $suffix || $suffix =~ ^-[a-z]+$ ) ]] \
+            || { echo "::error::.github/version must read 0.<minor> or 0.<minor>-<channel>, not '$base'"; exit 1; }
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            channel="pr-$PR_NUMBER"
-          else
-            channel="${GITHUB_REF_NAME//\//-}"
+            echo "channel=pr-$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "tag=v$minor.0$suffix-pr$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          echo "tag=$channel-build-$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          channel=${suffix#-}
+          tags=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name')
+          # Newest release of this channel, for the changelog; then the highest patch of this minor.
+          previous=$(grep -m1 -E "^v[0-9]+\.[0-9]+\.[0-9]+$suffix\$" <<< "$tags" || true)
+          last=$(sed -nE "s/^v${minor//./\\.}\.([0-9]+)$suffix\$/\1/p" <<< "$tags" | sort -n | tail -n 1)
+          tag="v$minor.$(( ${last:--1} + 1 ))$suffix"
+          echo "channel=${channel:-stable}" >> "$GITHUB_OUTPUT"
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Build $tag, previous release of the channel: ${previous:-none}"
 
   build:
     name: ${{ matrix.platform }} binary
@@ -528,9 +552,9 @@ jobs:
             .sccache
           key: objects-${{ matrix.platform }}-${{ github.sha }}
 
-  # Publishes every binary as a GitHub pre-release once every platform built: on pushes to nx2
-  # and nx2-experimental, and on manual runs unless "Publish the binaries as a GitHub release" is
-  # unticked.
+  # Publishes every binary as a GitHub release (a pre-release outside stable) once every platform
+  # built: on pushes to nx2 and nx2-experimental, and on manual runs unless "Publish the binaries as
+  # a GitHub release" is unticked.
   release:
     name: Publish release
     needs: [name, build]
@@ -539,6 +563,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Only the channel's changelog and title (.github/release-notes/<channel>.md / .title).
+      - name: Check out release notes
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/release-notes
+          path: source
+
       - name: Download binaries
         uses: actions/download-artifact@v4
         with:
@@ -569,12 +600,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ needs.name.outputs.channel }}
           BUILD_TAG: ${{ needs.name.outputs.tag }}
+          previous: ${{ needs.name.outputs.previous }}
         run: |
           set -euo pipefail
           ls -la dist
-          previous=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq \
-            '[.[] | select(.tag_name | startswith(env.CHANNEL + "-build-"))][0].tag_name // empty')
+          # A channel can carry a changelog (shown first) and a release title of its own.
+          channel_notes="source/.github/release-notes/$CHANNEL.md"
+          channel_title="source/.github/release-notes/$CHANNEL.title"
+          title="Eglantine $BUILD_TAG (${GITHUB_SHA::7})"
+          if [ -f "$channel_title" ]; then
+            title="$(head -n 1 "$channel_title") – $BUILD_TAG (${GITHUB_SHA::7})"
+          fi
+          # Stable builds are regular releases, so GitHub marks the newest one Latest.
+          prerelease=--prerelease
+          [ "$CHANNEL" = stable ] && prerelease=
           {
+            if [ -f "$channel_notes" ]; then
+              cat "$channel_notes"
+              echo
+              echo "---"
+              echo
+            fi
             if [ -n "$previous" ]; then
               echo "## Changes since $previous"
               echo
@@ -596,6 +642,6 @@ jobs:
           gh release create "$BUILD_TAG" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "Eglantine $CHANNEL build $GITHUB_RUN_NUMBER (${GITHUB_SHA::7})" \
+            $prerelease \
+            --title "$title" \
             --notes-file notes.md
