@@ -627,9 +627,9 @@ struct Memory::Impl {
 
     /// Whether a page of [vaddr, vaddr + size) has a read trap armed.
     bool AnyReadTrapArmed(u64 vaddr, size_t size) {
-        if (read_traps.Empty()) {
-            return false;
-        }
+        // Always under the lock (no Empty() shortcut): arming opens a new generation before it
+        // counts the page, so a reader that already sees the new generation could see no traps,
+        // remember the page as clean at that generation and later disarm the trap unflushed.
         std::scoped_lock lk{read_trap_mutex};
         bool armed = false;
         read_traps.ForEach(vaddr >> YUZU_PAGEBITS, ((vaddr + size - 1) >> YUZU_PAGEBITS) + 1,
