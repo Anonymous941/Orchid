@@ -36,11 +36,10 @@ Mario Tennis Fever first, plus the shader, kernel and graphics work other games 
 
 | Branch | Channel | Release name |
 |---|---|---|
-| `mario-tennis-fever` | stable | `v0.<minor>.<patch>`, regular release |
-| `nx2` | mirror of zortos293/Eglantine | no releases from this fork |
+| `main` | stable | `v0.<minor>.<patch>`, regular release |
 
-`.github/version` sets the minor version; CI counts the patch up. The former experimental branch
-`mario-tennis-fever-perf` was merged into `mario-tennis-fever` in 0.5.
+`.github/version` sets the minor version; CI counts the patch up. In 0.5 all branches were merged
+into `main` (formerly `mario-tennis-fever`), including the experimental `mario-tennis-fever-perf`.
 
 Commits land often, but they do not start a build. Release builds are started by hand
 (Actions > release-binaries > Run workflow), so the newest release can be several commits behind
@@ -93,10 +92,10 @@ sudo pacman -Syu --needed base-devel boost catch2 cmake enet ffmpeg fmt git glsl
 
 Ubuntu 26.04, Debian 13 and other distributions: see [docs/Deps.md](docs/Deps.md).
 
-Clone `mario-tennis-fever`, configure and build:
+Clone `main`, configure and build:
 
 ```sh
-git clone -b mario-tennis-fever https://github.com/MythosOfs/Eglantine.git
+git clone https://github.com/MythosOfs/Eglantine.git
 cd Eglantine
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DYUZU_TESTS=OFF \
   -DVulkanHeaders_FORCE_BUNDLED=ON -DVulkanUtilityLibraries_FORCE_BUNDLED=ON
