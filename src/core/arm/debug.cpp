@@ -16,16 +16,12 @@
 #include "core/hle/kernel/kernel.h"
 #include "core/hle/kernel/physical_core.h"
 #include "core/hle/service/hle_ipc.h"
+#include "core/hle/service/server_manager.h"
 #include "core/hle/service/service.h"
 #include "core/memory.h"
 
 #include <chrono>
 #include <thread>
-
-namespace Service {
-// ponytail: diagnostics only, defined in service/server_manager.cpp.
-const char* DiagSessionServiceName(const Kernel::KServerSession* session);
-} // namespace Service
 
 namespace Core {
 
@@ -377,7 +373,7 @@ u32 SafeRead32(Mem& mem, u64 addr) {
 }
 
 // ponytail: diagnostics only. Decodes the SVC a thread last entered (for blocked threads that is the wait).
-void LogLastSvc(System& system, Kernel::KProcess* app, const Kernel::KThread& thread) {
+static void LogLastSvc(System& system, Kernel::KProcess* app, const Kernel::KThread& thread) {
     auto& mem = system.ApplicationMemory();
     auto& kernel = system.Kernel();
     const u32 id = thread.GetLastSvc();
