@@ -360,6 +360,8 @@ BufferCacheRuntime::BufferCacheRuntime(const Device& device_, MemoryAllocator& m
       staging_pool{staging_pool_}, guest_descriptor_queue{guest_descriptor_queue_},
       quad_index_pass(device, scheduler, descriptor_pool, staging_pool,
                       compute_pass_descriptor_queue),
+      quad_indirect_pass(device, scheduler, descriptor_pool, staging_pool,
+                         compute_pass_descriptor_queue),
       multi_range_buffers(device_) {
     const VkDriverIdKHR driver_id = device.GetDriverID();
     limit_dynamic_storage_buffers = driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY ||
@@ -649,7 +651,16 @@ void BufferCacheRuntime::BindIndexBuffer(PrimitiveTopology topology, IndexFormat
 }
 
 void BufferCacheRuntime::BindQuadIndexBuffer(PrimitiveTopology topology, u32 first, u32 count) {
-    if (count == 0) {
+    // The quad index buffer holds indices up to first + count, so a corrupt draw state (seen with
+    // first ~1.9 billion) would allocate gigabytes and abort on VK_ERROR_OUT_OF_DEVICE_MEMORY.
+    const bool corrupt = u64{first} + count > (u64{1} << 24);
+    if (corrupt) {
+        static bool logged = false;
+        if (!std::exchange(logged, true)) {
+            LOG_WARNING(Render_Vulkan, "Skipping quad draw with first={} count={}", first, count);
+        }
+    }
+    if (count == 0 || corrupt) {
         ReserveNullBuffer();
         scheduler.Record([this](vk::CommandBuffer cmdbuf) {
             cmdbuf.BindIndexBuffer(*null_buffer, 0, VK_INDEX_TYPE_UINT32);
@@ -664,6 +675,14 @@ void BufferCacheRuntime::BindQuadIndexBuffer(PrimitiveTopology topology, u32 fir
         quad_strip_index_buffer->UpdateBuffer(first + count);
         quad_strip_index_buffer->BindBuffer(first);
     }
+}
+
+void BufferCacheRuntime::BindQuadIndirect(VkBuffer src_buffer, u32 src_offset) {
+    // shortcut: an indirect quad draw stops at 2^18 vertices; raise it if a title draws more.
+    constexpr u32 max_vertices = 1U << 18;
+    quad_array_index_buffer->UpdateBuffer(max_vertices);
+    quad_indirect_args = quad_indirect_pass.Convert(src_buffer, src_offset, max_vertices);
+    quad_array_index_buffer->BindBuffer(0);
 }
 
 void BufferCacheRuntime::BindVertexBuffer(u32 index, VkBuffer buffer, u32 offset, u32 size, u32 stride) {

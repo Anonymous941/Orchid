@@ -368,7 +368,10 @@ private:
         page_begin = address;
         page_end = address;
         if (length >= sizeof(Instruction) && gpu_memory.IsFullyMappedRange(address, length)) {
-            gpu_memory.ReadBlockUnsafe(address, page.data(), length);
+            // ponytail: flushing read (once per 4 KiB page, not per instruction). Code the GPU wrote
+            // (DMA/I2M/compute) lives in the buffer cache until downloaded; an unsafe read sees the
+            // stale guest copy and the shader lowers as zeros (Yoshi black frame, round 10).
+            gpu_memory.ReadBlock(address, page.data(), length);
             page_end = next_page;
         }
     }
@@ -421,7 +424,7 @@ std::shared_ptr<const LoweredNativeCode> GenericEnvironment::LowerNativeCode(u32
                 if (!native.empty()) break;
                 throw Shader::RuntimeError("Unmapped native shader instruction at {:#x}", address);
             }
-            gpu_memory->ReadBlockUnsafe(address, &instruction, sizeof(instruction));
+            gpu_memory->ReadBlock(address, &instruction, sizeof(instruction));
         }
         native.push_back(instruction);
         const auto status = capture.Observe(instruction, index);

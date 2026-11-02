@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <map>
 #include <memory>
 #include <cstdio>
 #include <cstdlib>
@@ -28,6 +30,7 @@
 #include "video_core/gpu_logging/gpu_logging.h"
 #include "video_core/control/channel_state.h"
 #include "video_core/native_query_trace.h"
+#include "video_core/yo_stats.h"
 #include "video_core/readback_diagnostics.h"
 #include "video_core/engines/maxwell_3d.h"
 #include "video_core/engines/kepler_compute.h"
@@ -242,8 +245,13 @@ RasterizerVulkan::~RasterizerVulkan() {
     scheduler.Finish();
 }
 
+
 template <typename Func>
 void RasterizerVulkan::PrepareDraw(bool is_indexed, Func&& draw_func) {
+    if (g_yo.enabled) {
+        ++g_yo.draws;
+        g_yo.Begin("draw");
+    }
 
     SCOPE_EXIT {
         gpu.TickWork();
@@ -266,6 +274,12 @@ void RasterizerVulkan::PrepareDraw(bool is_indexed, Func&& draw_func) {
     const auto report_failure = [&](std::string_view reason) {
         static std::set<std::tuple<u64, u64, std::string_view>> seen;
         const auto& regs = maxwell3d->regs;
+        if (g_yo.enabled) {
+            ++g_yo.skips[std::string{reason}];
+            if (g_yo.draw_log.size() < 3000) {
+                g_yo.draw_log += fmt::format("!{:x}({}) ", regs.rt[0].Address(), reason);
+            }
+        }
         const u64 vs = (u64{regs.pipelines[1].reserved[0] & 0xff} << 32) | regs.pipelines[1].reserved[1];
         const u64 ps = (u64{regs.pipelines[5].reserved[0] & 0xff} << 32) | regs.pipelines[5].reserved[1];
         if (seen.size() < 64 && seen.emplace(vs, ps, reason).second) {
@@ -375,6 +389,17 @@ void RasterizerVulkan::PrepareDraw(bool is_indexed, Func&& draw_func) {
         UpdateDynamicStates();
     }
 
+    if (g_yo.enabled) {
+        const auto& regs = maxwell3d->regs;
+        const u64 ps_low = ((u64{regs.pipelines[5].reserved[0] & 0xff} << 32) | regs.pipelines[5].reserved[1]) & 0xffffffffULL;
+        if (g_yo.draw_log.size() < 3000) {
+            g_yo.draw_log += fmt::format("{:x}>{:x} ", regs.rt[0].Address(), ps_low);
+        }
+        for (u32 i = 0; i < 8; ++i) {
+            const auto& rt = maxwell3d->regs.rt[i];
+            g_yo.NoteRT(gpu_memory->GpuToCpuAddress(rt.Address()).value_or(rt.Address()), static_cast<u32>(rt.format), rt.width, rt.height);
+        }
+    }
     query_cache.NotifySegment(true);
     HandleTransformFeedback();
     query_cache.CounterEnable(VideoCommon::QueryType::ZPassPixelCount64, maxwell3d->regs.zpass_pixel_count_enable);
@@ -605,6 +630,21 @@ void RasterizerVulkan::Draw(bool is_indexed, u32 instance_count) {
         const u64 vs = (u64{regs.pipelines[1].reserved[0] & 0xff} << 32) | regs.pipelines[1].reserved[1];
         if (std::find(skip_list.begin(), skip_list.end(), vs) != skip_list.end()) return;
     }
+    // A runaway macro can leave text in the draw registers (counts near 2^31). Such a draw keeps
+    // the host GPU busy until the kernel's ring timeout resets the device, taking the desktop down.
+    {
+        const auto& draw_state = maxwell3d->draw_manager.draw_state;
+        const u64 first = is_indexed ? draw_state.index_buffer.first : draw_state.vertex_buffer.first;
+        const u64 count = is_indexed ? draw_state.index_buffer.count : draw_state.vertex_buffer.count;
+        if (first + count > (u64{1} << 26) || instance_count > (1U << 20)) {
+            static bool logged = false;
+            if (!std::exchange(logged, true)) {
+                LOG_WARNING(Render_Vulkan, "Skipping corrupt draw: first={} count={} instances={}",
+                            first, count, instance_count);
+            }
+            return;
+        }
+    }
     // EDEN_NX2_RT_TRACE: log the first draw to every distinct colour target (debug aid).
     if (static const bool trace = std::getenv("EDEN_NX2_RT_TRACE") != nullptr; trace) {
         static std::set<std::tuple<GPUVAddr, u32, u32, u64, u64>> seen;
@@ -656,6 +696,13 @@ void RasterizerVulkan::DrawIndirect() {
     const auto& params = maxwell3d->draw_manager.indirect_state;
     buffer_cache.SetDrawIndirect(&params);
     PrepareDraw(params.is_indexed, [this, &params] {
+        if (buffer_cache.IsQuadIndirectDraw()) {
+            // Converted by BindHostGeometryBuffers into an indexed draw over the quad indices.
+            scheduler.Record([args = buffer_cache_runtime.QuadIndirectArgs()](vk::CommandBuffer cmdbuf) {
+                cmdbuf.DrawIndexedIndirect(args.first, args.second, 1, 0);
+            });
+            return;
+        }
         const auto indirect_buffer = buffer_cache.GetDrawIndirectBuffer();
         const auto& buffer = indirect_buffer.first;
         const auto& offset = indirect_buffer.second;
@@ -777,6 +824,12 @@ void RasterizerVulkan::Clear(u32 layer_count) {
     const bool use_stencil = regs.clear_surface.S;
     if (!use_color && !use_depth && !use_stencil) {
         return;
+    }
+    if (g_yo.enabled) {
+        ++g_yo.clears;
+        g_yo.Begin("clear");
+        const auto& rt = regs.rt[regs.clear_surface.RT % 8];
+        g_yo.NoteRT(gpu_memory->GpuToCpuAddress(rt.Address()).value_or(rt.Address()), static_cast<u32>(rt.format), rt.width, rt.height);
     }
 
     std::scoped_lock lock{texture_cache.mutex};
@@ -953,6 +1006,10 @@ void RasterizerVulkan::Clear(u32 layer_count) {
 
 void RasterizerVulkan::DispatchCompute() {
     VideoCommon::Nx2Profile::Scope profile_scope{VideoCommon::Nx2Profile::Zone::Compute};
+    if (g_yo.enabled) {
+        ++g_yo.dispatches;
+        g_yo.Begin("dispatch");
+    }
     FlushWork();
     gpu_memory->FlushCaching();
 
@@ -1286,6 +1343,25 @@ void RasterizerVulkan::FlushAndInvalidateRegion(DAddr addr, u64 size,
 }
 
 void RasterizerVulkan::WaitForIdle() {
+    // Hyrule Warriors sends ~200 a frame, each draining the GPU and ending the render pass; one
+    // with nothing recorded since the last waits for nothing new.
+    static u64 waits{};
+    static u64 skipped{};
+    if ((++waits & 0xffff) == 0) {
+        LOG_INFO(Render_Vulkan, "Wait for idle: {} of the last 65536 skipped", std::exchange(skipped, 0));
+    }
+    // TEMP: EDEN_NX2_WFI=0 drops the wait entirely (A/B test: the caches insert their own barriers).
+    static const bool wfi_off = [] {
+        const char* value = std::getenv("EDEN_NX2_WFI");
+        return value && value[0] == '0';
+    }();
+    if (scheduler.RecordCount() == wfi_record_count || wfi_off) {
+        ++skipped;
+        if (wfi_off) {
+            query_cache.NotifyWFI();
+        }
+        return;
+    }
     // Everything but wait pixel operations. This intentionally includes FRAGMENT_SHADER_BIT because
     // fragment shaders can still write storage buffers.
     VkPipelineStageFlags flags =
@@ -1306,6 +1382,7 @@ void RasterizerVulkan::WaitForIdle() {
         cmdbuf.WaitEvents(event, flags, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, {}, {}, {});
     });
     fence_manager.SignalOrdering();
+    wfi_record_count = scheduler.RecordCount();
 }
 
 void RasterizerVulkan::FragmentBarrier() {
@@ -1354,6 +1431,11 @@ bool RasterizerVulkan::HasDrawTransformFeedback() {
 bool RasterizerVulkan::AccelerateSurfaceCopy(const Tegra::Engines::Fermi2D::Surface& src,
                                              const Tegra::Engines::Fermi2D::Surface& dst,
                                              const Tegra::Engines::Fermi2D::Config& copy_config) {
+    if (g_yo.enabled) {
+        ++g_yo.copies;
+        g_yo.Begin("fermi2d");
+        g_yo.NoteRT(gpu_memory->GpuToCpuAddress(dst.Address()).value_or(dst.Address()), static_cast<u32>(dst.format), dst.width, dst.height);
+    }
     std::scoped_lock lock{texture_cache.mutex};
     return texture_cache.BlitImage(dst, src, copy_config);
 }
@@ -1425,6 +1507,28 @@ std::optional<FramebufferTextureInfo> RasterizerVulkan::AccelerateDisplay(
     std::scoped_lock lock{texture_cache.mutex};
     const auto [image_view, scaled] =
         texture_cache.TryFindFramebufferImageView(config, framebuffer_addr);
+    if (g_yo.enabled) {
+        const auto t = std::chrono::duration<double>(std::chrono::steady_clock::now() - g_yo.start).count();
+        if (t >= 40.0) {
+            std::string skips;
+            for (const auto& [reason, count] : g_yo.skips) {
+                skips += fmt::format("{}x{} ", reason, count);
+            }
+            const u64 pick = g_yo.pick_cpu ? g_yo.pick_cpu : framebuffer_addr;
+            const std::string draw_log = g_yo.draw_log;
+            const auto writer = g_yo.last_writer.find(pick);
+            const auto mods = g_yo.window_mods.count(pick) ? g_yo.window_mods[pick] : 0U;
+            LOG_INFO(HW_GPU, "YO present t={:.1f} addr={:#x} accel={} draws={} skipped=[{}] clears={} "
+                     "dispatches={} copies={} rts=[{}] presented_img={:#x} mods_on_it={} last_writer_of_it={} seq=[{}] pick={}", t, framebuffer_addr,
+                     image_view != nullptr, g_yo.draws, skips, g_yo.clears, g_yo.dispatches,
+                     g_yo.copies, g_yo.rts, pick, mods, writer != g_yo.last_writer.end() ? writer->second : std::string{"none"}, draw_log, g_yo.pick);
+        }
+        g_yo.draws = g_yo.clears = g_yo.dispatches = g_yo.copies = 0;
+        g_yo.skips.clear();
+        g_yo.rts.clear();
+        g_yo.window_mods.clear();
+        g_yo.draw_log.clear();
+    }
     static u32 display_trace_count{};
     static const bool frame_capture = std::getenv("EDEN_NATIVE_FRAME_CAPTURE") != nullptr;
     if (frame_capture && display_trace_count++ < 64) {
