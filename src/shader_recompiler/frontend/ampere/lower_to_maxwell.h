@@ -114,11 +114,13 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
                     active_link = call_links[call];
                 }
             }
-            // RET has no destination GPR; bits 16..23 are reserved, not a write to R0. Neither do the
-            // ISETP/FSETP predicate forms (bits 16..23 are unused there).
-            const bool predicate_only = opcode == 0x20c || opcode == 0x80c || opcode == 0xa0c || opcode == 0xc0c ||
-                                        opcode == 0x20b || opcode == 0x80b || opcode == 0xa0b || opcode == 0xc0b;
-            if (active_link && opcode != 0x950 && !predicate_only && insn.Bits(16, 8) == *active_link)
+            // RET, BRA, NOP and ISETP/FSETP (predicate outputs) have no destination GPR; bits 16..23
+            // are not a write to R0. IMAD.WIDE writes a register pair (upstream a169391e6).
+            const bool no_destination = opcode == 0x950 || opcode == 0x947 || opcode == 0x918 ||
+                                        (opcode & 0x1ff) == 0x00c || (opcode & 0x1ff) == 0x00b;
+            const bool pair = opcode == 0x225 || opcode == 0x625 || opcode == 0x825;
+            if (active_link && !no_destination &&
+                (insn.Bits(16, 8) == *active_link || (pair && insn.Bits(16, 8) + 1 == *active_link)))
                 return fail(index, "native callee overwrites link register");
         }
         // Scratch values and emulated uniform state occupy reserved high GPRs.
