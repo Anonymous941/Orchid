@@ -390,6 +390,8 @@ bool DmaPusher::Step() {
     }
 
     if (header.size > 0) {
+        // The entry is an indirect draw record a macro draws on the GPU: no flush for it.
+        bool takes_gpu_parameters = false;
         if (subchannels[dma_state.subchannel] && dma_state.method_count) {
             const auto engine = subchannel_type[dma_state.subchannel];
             const bool kepler_payload = engine == Engines::EngineTypes::KeplerCompute && dma_state.method == ComputeInline && dma_state.non_incrementing;
@@ -400,6 +402,15 @@ bool DmaPusher::Step() {
                 split_state.FrontMacros() &&
                 static_cast<Engines::Maxwell3D*>(subchannels[dma_state.subchannel])
                     ->GetNativeMacroEngine().native_turing;
+            // Whoever wrote the record: a first GPU write can still be queued on the back, where
+            // the written-page bits are set, and the GPU reads either kind in order.
+            if (front_native_macro && command_resume_offset == 0) {
+                takes_gpu_parameters =
+                    static_cast<Engines::Maxwell3D*>(subchannels[dma_state.subchannel])
+                        ->FrontTakesIndirectParameters(system, header.addr,
+                                                       static_cast<u32>(header.size),
+                                                       dma_state.method_count);
+            }
             if ((kepler_payload || macro_payload) && !front_native_macro) {
                 const size_t words = std::min<size_t>(dma_state.method_count, header.size);
                 auto* const engine_state = subchannels[dma_state.subchannel];
@@ -495,7 +506,9 @@ bool DmaPusher::Step() {
             command_resume_offset +=
                 ProcessCommands(commands.subspan(command_resume_offset), command_resume_offset);
         } else {
-            FlushGpuWrittenCommands(dma_state.dma_get, size_t{header.size} * sizeof(u32));
+            if (!takes_gpu_parameters) {
+                FlushGpuWrittenCommands(dma_state.dma_get, size_t{header.size} * sizeof(u32));
+            }
             Tegra::Memory::GpuGuestMemory<Tegra::CommandHeader, Tegra::Memory::GuestMemoryFlags::UnsafeRead>headers(memory_manager, dma_state.dma_get, header.size, &command_headers);
             const std::span<const CommandHeader> commands{headers.data(), headers.size()};
             RecordParsedEntry(header, commands);
@@ -866,8 +879,17 @@ void DmaPusher::FlushGpuWrittenCommands(GPUVAddr address, size_t size) {
     if (auto& split = VideoCommon::GpuSplit::Get(); split.Active()) {
         split.Drain();
     }
-    if (memory_manager.IsMemoryDirty(address, size, VideoCommon::CacheType::BufferCache)) {
-        memory_manager.FlushRegion(address, size, VideoCommon::CacheType::BufferCache);
+    if (!memory_manager.IsMemoryDirty(address, size, VideoCommon::CacheType::BufferCache)) {
+        return;
+    }
+    memory_manager.FlushRegion(address, size, VideoCommon::CacheType::BufferCache);
+    // TEMP diagnostic: which GPU-written entries still need a flush.
+    if (static std::atomic<u32> flush_logs{}; flush_logs.fetch_add(1) < 64) {
+        std::array<u32, 8> words{};
+        memory_manager.ReadBlockUnsafe(address, words.data(), std::min<size_t>(size, sizeof(words)));
+        LOG_INFO(HW_GPU, "GPU-written entry flushed: {:#x}, {} words, method {:#x} ({} left, sub {}), words [{:#010x}]",
+                 address, size / sizeof(u32), dma_state.method, dma_state.method_count,
+                 dma_state.subchannel, fmt::join(std::span{words}.first(std::min<size_t>(size / sizeof(u32), 8)), " "));
     }
 }
 

@@ -303,8 +303,13 @@ bool BufferCache<P>::DMACopy(GPUVAddr src_address, GPUVAddr dest_address, u64 am
     runtime.CopyBuffer(dest_buffer, src_buffer, copies, true);
     if (has_new_downloads) {
         memory_tracker.MarkRegionAsGpuModified(*cpu_dest_address, amount);
+        // EDEN_NX2_COPY_FINISH=0 (test): skip the full host GPU wait after copies of GPU-written data.
+        static const bool copy_finish = [] {
+            const char* value = std::getenv("EDEN_NX2_COPY_FINISH");
+            return value == nullptr || value[0] != '0';
+        }();
         const bool should_sync = Settings::IsGPUFenceBehaviorBalanced() || Settings::IsGPUFenceBehaviorAccurate();
-        if (should_sync) {
+        if (should_sync && copy_finish) {
             runtime.Finish();
         }
     }
@@ -419,8 +424,10 @@ void BufferCache<P>::BindHostGeometryBuffers(bool is_indexed) {
         BindHostIndexBuffer();
     } else if constexpr (!HAS_FULL_INDEX_AND_PRIMITIVE_SUPPORT) {
         const auto& draw_state = maxwell3d->draw_manager.draw_state;
-        if (draw_state.topology == Maxwell::PrimitiveTopology::Quads ||
-            draw_state.topology == Maxwell::PrimitiveTopology::QuadStrip) {
+        if (IsQuadIndirectDraw()) {
+            // The vertex count is in GPU memory: converted below, once that is synchronized.
+        } else if (draw_state.topology == Maxwell::PrimitiveTopology::Quads ||
+                   draw_state.topology == Maxwell::PrimitiveTopology::QuadStrip) {
             runtime.BindQuadIndexBuffer(draw_state.topology, draw_state.vertex_buffer.first,
                                         draw_state.vertex_buffer.count);
         }
@@ -429,6 +436,12 @@ void BufferCache<P>::BindHostGeometryBuffers(bool is_indexed) {
     BindHostTransformFeedbackBuffers();
     if (current_draw_indirect) {
         BindHostDrawIndirectBuffers();
+        if constexpr (!HAS_FULL_INDEX_AND_PRIMITIVE_SUPPORT) {
+            if (!is_indexed && IsQuadIndirectDraw()) {
+                const auto [buffer, offset] = GetDrawIndirectBuffer();
+                runtime.BindQuadIndirect(buffer->Handle(), offset);
+            }
+        }
     }
 }
 
