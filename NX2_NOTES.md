@@ -294,9 +294,15 @@ commit; the ones that change behaviour have a switch to compare against, so an A
 | GPU thread waits on the command queue (250 us) instead of sleeping 1 ms while channels are suspended | new submissions waited out the sleep | — |
 | GpuSplit: front fields on their own cache line | false sharing per ring entry | — |
 | Smaller: pipeline looked up once per draw; TickWork without the mutex; per-fence dirty-memory gather and cache invalidation skipped when empty; IterateCache early stop; sparse alias walk skipped; view/sampler ids kept in the descriptor tables; GetMemoryLayoutSize answered from a per-thread kind entry; macro code generation only on changed words; MME DMA reads as one block; native compute inline data without a drain; SEM_EXECUTE check after its last warning skipped; stub ioctl logs rate-limited | per draw / per fence / per method | — |
+| Present from the present thread by default for Tennis (`LoadEarlyOverrides`, applied before the renderer is made) | with `async_presentation` off the back thread acquired and presented itself, each blocking up to a refresh under FIFO vsync | per-game `async_presentation` |
+| No submit after each Switch 2 ASTC GPU decode | a submit and state reset per new texture on cards that keep ASTC uncompressed (12 GiB+) | `EDEN_NX2_ASTC_FLUSH=1` (submit) / `=0` (wait) |
+| Applet "last frame" capture of Switch 2 frames drawn every 30th frame | a framebuffer lookup, render pass break and 1280x720 draw per frame that nothing reads for Switch 2 | — |
+| Kernel: scheduler lock word on its own cache line; host service threads (now the gsv sessions) woken after the lock is released; pause in the context-guard retry; timing thread woken only for a new earliest event; 1 ns timer slack for it on Linux | futex calls and cache-line traffic while every core waits for the global scheduler lock; timeouts up to 50 us late | — |
 | Fixes found on the way: `KeplerCompute::uploads` grew for the whole session in native mode (leak, growing reallocations); `PageTableOp` changed `kind_map` without the lock | | — |
 
 Not done (ideas): a memo for storage buffer bindings and a CPU-dirty generation for
 SynchronizeBuffer (risky without a verify mode); vsync events restarted at a late present (VRR-like,
 the game may count vsyncs); syncpoint actions run outside the SyncpointManager lock; LSE atomics as
-native host atomics in dynarmic.
+native host atomics in dynarmic; kernel timer arming outside the scheduler lock (measure first: do
+the title's WaitForAddress calls carry timeouts?); batched texture collector downloads and reused
+ASTC decode images (only matter below ~12 GiB of VRAM); a second graphics queue for presents.
