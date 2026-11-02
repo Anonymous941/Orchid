@@ -5,10 +5,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <array>
+#include <cstdlib>
+#include <mutex>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
-#include <cstdlib>
 
 #include "common/settings.h"
 #include "core/hle/kernel/k_page_table.h"
@@ -107,13 +109,39 @@ AppletProgramId AppletIdToProgramId(AppletId applet_id) {
     }
 }
 
-AppletId FromNx2AppletId(AppletId applet_id) {
-    if (AppletIdToProgramId(applet_id) != static_cast<AppletProgramId>(0)) {
-        return applet_id;
+AppletId NormalizeAppletId(AppletId id) {
+    const u32 raw_id = static_cast<u32>(id);
+    static std::mutex mutex;
+    static std::unordered_set<u32> logged_raw_ids;
+    static std::unordered_set<u32> warned_raw_ids;
+
+    bool log_info = false;
+    {
+        std::scoped_lock lk{mutex};
+        log_info = logged_raw_ids.insert(raw_id).second;
     }
-    const auto low_byte = static_cast<AppletId>(static_cast<u32>(applet_id) & 0xFF);
-    return AppletIdToProgramId(low_byte) != static_cast<AppletProgramId>(0) ? low_byte
-                                                                         : applet_id;
+    if (log_info) {
+        LOG_INFO(Service_AM, "CreateLibraryApplet called with raw applet_id={:#x}", raw_id);
+    }
+
+    if (AppletIdToProgramId(id) == static_cast<AppletProgramId>(0)) {
+        const auto low_byte = static_cast<AppletId>(raw_id & 0xFF);
+        if (AppletIdToProgramId(low_byte) != static_cast<AppletProgramId>(0)) {
+            bool log_warning = false;
+            {
+                std::scoped_lock lk{mutex};
+                log_warning = warned_raw_ids.insert(raw_id).second;
+            }
+            if (log_warning) {
+                LOG_WARNING(Service_AM,
+                            "Normalizing unknown raw applet_id={:#x} to low byte {:#x}",
+                            raw_id, static_cast<u32>(low_byte));
+            }
+            return low_byte;
+        }
+    }
+
+    return id;
 }
 
 std::shared_ptr<ILibraryAppletAccessor> CreateGuestApplet(Core::System& system,
@@ -183,8 +211,8 @@ ILibraryAppletCreator::ILibraryAppletCreator(Core::System& system_, std::shared_
       m_window_system{window_system}, m_applet{std::move(applet)} {
     static const FunctionInfo functions[] = {
         {0, D<&ILibraryAppletCreator::CreateLibraryApplet>, "CreateLibraryApplet"},
-        {1, nullptr, "TerminateAllLibraryApplets"},
-        {2, nullptr, "AreAnyLibraryAppletsLeft"},
+        {1, &ILibraryAppletCreator::StubReplyZeroed, "TerminateAllLibraryApplets"},
+        {2, &ILibraryAppletCreator::StubReplyZeroed, "AreAnyLibraryAppletsLeft"},
         {3, D<&ILibraryAppletCreator::CreateLibraryAppletEx>, "CreateLibraryAppletEx"},
         {10, D<&ILibraryAppletCreator::CreateStorage>, "CreateStorage"},
         {11, D<&ILibraryAppletCreator::CreateTransferMemoryStorage>, "CreateTransferMemoryStorage"},
@@ -285,7 +313,7 @@ Result ILibraryAppletCreator::CreateLibraryApplet(
     LibraryAppletMode library_applet_mode) {
     LOG_DEBUG(Service_AM, "called with applet_id={} applet_mode={}", applet_id,
               library_applet_mode);
-    applet_id = FromNx2AppletId(applet_id);
+    applet_id = NormalizeAppletId(applet_id);
     // ponytail: DxD round-8 debug, EDEN_DXD_BT=1 logs guest backtrace on controller applet creation
     // ponytail: IPC runs on a host thread, so CurrentPhysicalCore() is unusable; dump every guest core.
     if (applet_id == AppletId::Controller && std::getenv("EDEN_DXD_BT")) {
@@ -324,7 +352,7 @@ Result ILibraryAppletCreator::CreateLibraryAppletEx(
     LibraryAppletMode library_applet_mode, u64 thread_id) {
     LOG_DEBUG(Service_AM, "called with applet_id={} applet_mode={} thread_id={}", applet_id,
               library_applet_mode, thread_id);
-    applet_id = FromNx2AppletId(applet_id);
+    applet_id = NormalizeAppletId(applet_id);
     // ponytail: DxD round-8 debug, EDEN_DXD_BT=1 logs guest backtrace on controller applet creation
     if (applet_id == AppletId::Controller && std::getenv("EDEN_DXD_BT")) {
         DxdDumpControllerState(system);

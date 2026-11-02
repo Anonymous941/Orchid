@@ -5,8 +5,8 @@
 // SPDX-FileCopyrightText: 2021 Skyline Team and Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
 #include <optional>
 #include <utility>
 
@@ -40,6 +40,13 @@ nvhost_as_gpu::nvhost_as_gpu(Core::System& system_, Module& module_, NvCore::Con
 
 nvhost_as_gpu::~nvhost_as_gpu() {
     Nx2GpuMemoryRegistry::Get().RemoveListener(this);
+    // Leave shared ranges to the process's other address spaces; like this address space's own
+    // ranges, one nobody else maps stays allocated.
+    for (const auto& [key, range] : nx2_device_ranges) {
+        if (range.shared) {
+            Nx2GpuMemoryRegistry::Get().ReleaseDeviceRange(range.asid, key.first, key.second);
+        }
+    }
 }
 
 NvResult nvhost_as_gpu::Ioctl1(DeviceFD fd, Ioctl command, std::span<const u8> input,
@@ -150,8 +157,7 @@ std::optional<Nx2GpuMappingPreparation> nvhost_as_gpu::Nx2PrepareMap(u64 gpu_add
     }
     // The same CPU range is often mapped twice (at its own address and in a sparse region), so
     // reuse its SMMU mapping.
-    DAddr device_address{};
-    bool heap = false;
+    Nx2DeviceRange range{};
     const auto backing = std::find_if(nx2_device_ranges.begin(), nx2_device_ranges.end(),
                                       [&](const auto& entry) {
         const auto [start, length] = entry.first;
@@ -161,31 +167,44 @@ std::optional<Nx2GpuMappingPreparation> nvhost_as_gpu::Nx2PrepareMap(u64 gpu_add
     if (backing != nx2_device_ranges.end()) {
         return Nx2GpuMappingPreparation{};
     } else if (session->has_preallocated_area && session->mapper->IsInBounds(cpu_address, size)) {
-        device_address = session->mapper->Map(cpu_address, size);
-        if (device_address == 0) {
+        range = {session->mapper->Map(cpu_address, size), true};
+        if (range.address == 0) {
             session->mapper->Unmap(cpu_address, size);
             return std::nullopt;
         }
-        heap = true;
     } else {
-        auto& smmu = system.Host1x().MemoryManager();
-        device_address = smmu.Allocate(Common::AlignUp(size, 0x20000));
-        if (device_address == 0) {
+        const auto allocate = [&]() -> u64 {
+            auto& smmu = system.Host1x().MemoryManager();
+            const DAddr address = smmu.Allocate(Common::AlignUp(size, 0x20000));
+            if (address != 0) {
+                smmu.Map(address, cpu_address, size, session->asid, true);
+            }
+            return address;
+        };
+        // EDEN_NX2_PRIVATE_DEVICE_RANGES=1 (A/B aid): a range per address space.
+        static const bool private_ranges = std::getenv("EDEN_NX2_PRIVATE_DEVICE_RANGES") != nullptr;
+        if (private_ranges) {
+            range = {allocate(), false};
+        } else {
+            range = {Nx2GpuMemoryRegistry::Get().AcquireDeviceRange(session->asid.id, cpu_address,
+                                                                    size, allocate),
+                     false, true, session->asid.id};
+        }
+        if (range.address == 0) {
             LOG_CRITICAL(Service_NVDRV, "Switch 2 GPU memory {:#x}+{:#x}: out of SMMU space",
                          cpu_address, size);
             return std::nullopt;
         }
-        smmu.Map(device_address, cpu_address, size, session->asid, true);
     }
-    const auto rollback = [this, cpu_address, size, device_address, heap,
-                           mapper = session->mapper.get()] {
+    const auto rollback = [this, cpu_address, size, range, mapper = session->mapper.get()] {
         nx2_device_ranges.erase({cpu_address, size});
-        if (heap) {
+        if (range.heap) {
             mapper->Unmap(cpu_address, size);
-        } else {
+        } else if (!range.shared || Nx2GpuMemoryRegistry::Get().ReleaseDeviceRange(
+                                        range.asid, cpu_address, size)) {
             auto& smmu = system.Host1x().MemoryManager();
-            smmu.Unmap(device_address, size);
-            smmu.Free(device_address, Common::AlignUp(size, 0x20000));
+            smmu.Unmap(range.address, size);
+            smmu.Free(range.address, Common::AlignUp(size, 0x20000));
         }
     };
     bool delegated = false;
@@ -194,7 +213,7 @@ std::optional<Nx2GpuMappingPreparation> nvhost_as_gpu::Nx2PrepareMap(u64 gpu_add
             rollback();
         }
     };
-    nx2_device_ranges.emplace(std::pair{cpu_address, size}, Nx2DeviceRange{device_address, heap});
+    nx2_device_ranges.emplace(std::pair{cpu_address, size}, range);
     Nx2GpuMappingPreparation prepared{[this, rollback] {
         std::scoped_lock rollback_lock{mutex};
         rollback();
@@ -265,6 +284,10 @@ void nvhost_as_gpu::Nx2Release(u64 cpu_address, u64 size) {
             return false;
         }
         const auto range = entry.second;
+        if (range.shared &&
+            !Nx2GpuMemoryRegistry::Get().ReleaseDeviceRange(range.asid, start, length)) {
+            return true; // another address space of the process still maps it
+        }
         auto* const mapper = range.heap && session != nullptr ? session->mapper.get() : nullptr;
         Nx2GpuCommandScope::Run(system.GPU(), [&smmu, mapper, range, start, length] {
             if (range.heap) {

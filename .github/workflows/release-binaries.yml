@@ -38,7 +38,7 @@ jobs:
       previous: ${{ steps.name.outputs.previous }}
     steps:
       - name: Check out version file
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           sparse-checkout: .github/version
           sparse-checkout-cone-mode: false
@@ -79,8 +79,9 @@ jobs:
       BUILD_TAG: ${{ needs.name.outputs.tag }}
       ASSET_NAME: eglantine-${{ needs.name.outputs.tag }}-${{ matrix.platform }}
       CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_MAXSIZE: 1500M
+      CCACHE_MAXSIZE: 3000M
       SCCACHE_DIR: ${{ github.workspace }}/.sccache
+      SCCACHE_CACHE_SIZE: 3G
     strategy:
       fail-fast: false
       matrix:
@@ -109,7 +110,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Linux dependencies
         if: startsWith(matrix.platform, 'linux')
@@ -124,7 +125,9 @@ jobs:
             libswscale-dev pkg-config zlib1g-dev libva-dev libvdpau-dev \
             spirv-tools spirv-headers libusb-1.0-0-dev \
             libboost-dev libboost-fiber-dev libboost-context-dev \
-            libopus-dev libasound2-dev ccache
+            libopus-dev libasound2-dev ccache \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1
 
       - name: Install Qt on Linux x86_64
         if: startsWith(matrix.platform, 'linux') && runner.arch != 'ARM64'
@@ -242,6 +245,7 @@ jobs:
         with:
           msystem: UCRT64
           update: true
+          cache: true
           install: >-
             git make autoconf libtool automake-wrapper patch jq pactoys ninja
           pacboy: >-
@@ -253,7 +257,7 @@ jobs:
             lerc:p graphite2:p libwebp:p libtiff:p brotli:p ccache:p
 
       - name: Cache CPM downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .cache/cpm
           key: cpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('cpmfile.json', 'CMakeLists.txt', 'src/**/CMakeLists.txt') }}
@@ -263,7 +267,7 @@ jobs:
       # The sha in the key makes every run save a fresh cache (actions/cache never saves over an
       # exact hit), and restore-keys seeds it from the newest one of the same platform.
       - name: Cache compiler objects
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .ccache
@@ -446,9 +450,6 @@ jobs:
           set -euo pipefail
           test -x build/release/bin/eglantine
           test -x build/release/bin/eden-cli
-          # Libraries Qt's xcb platform plugin needs, so linuxdeploy can resolve and bundle them.
-          sudo apt-get install -y --no-install-recommends libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
-            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1
           tools="$RUNNER_TEMP/linuxdeploy"
           mkdir -p "$tools"
           arch=$(uname -m)
@@ -528,7 +529,7 @@ jobs:
       # zip gave a zip inside a zip. The release job zips it once for the release.
       - name: Upload Windows binary
         if: matrix.platform == 'windows-x86_64'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ASSET_NAME }}
           path: build/release/bin/
@@ -537,16 +538,17 @@ jobs:
 
       - name: Upload MinGW binary
         if: matrix.mingw
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ASSET_NAME }}
           path: build/release/bin/
           if-no-files-found: error
           retention-days: 7
 
+      # Both Linux files go in one artifact: the tar.gz and the AppImage.
       - name: Upload Linux binary
         if: startsWith(matrix.platform, 'linux')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ASSET_NAME }}
           path: |
@@ -558,7 +560,7 @@ jobs:
 
       - name: Upload macOS binary
         if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ASSET_NAME }}
           path: ${{ env.ASSET_NAME }}.zip
@@ -568,7 +570,7 @@ jobs:
 
       - name: Save macOS compiler cache after failure
         if: failure() && runner.os == 'macOS'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             .ccache
@@ -588,13 +590,13 @@ jobs:
     steps:
       # Only the channel's changelog (.github/release-notes/<channel>.md).
       - name: Check out release notes
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           sparse-checkout: .github/release-notes
           path: source
 
       - name: Download binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: eglantine-${{ needs.name.outputs.tag }}-*
           path: artifacts
