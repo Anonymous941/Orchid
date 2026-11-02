@@ -61,6 +61,7 @@ add_executable(tests
     video_core/ampere_sured.cpp
     video_core/ampere_release_guards.cpp
     video_core/ampere_release_f2i.cpp
+    video_core/syncpoint_manager.cpp
     input_common/calibration_configuration_job.cpp
 )
 
