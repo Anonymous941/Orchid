@@ -35,6 +35,7 @@
 #include "video_core/nx2.h"
 #include "video_core/nx2_profile.h"
 #include "video_core/cache_tracking_diagnostics.h"
+#include "video_core/yo_stats.h"
 #include "video_core/textures/decoders.h"
 
 namespace VideoCommon {
@@ -1217,6 +1218,20 @@ std::pair<typename P::ImageView*, bool> TextureCache<P>::TryFindFramebufferImage
                               slot_images[image_id].IsRescaled());
     };
 
+    if (g_yo.enabled) {
+        std::string desc;
+        for (const ImageId id : valid_image_ids) {
+            const auto& img = slot_images[id];
+            desc += fmt::format("[cpu={:#x} gpu={:#x} tick={} gmod={} cmod={} {}x{} fmt{}] ",
+                                img.cpu_addr, img.gpu_addr, img.modification_tick,
+                                True(img.flags & ImageFlagBits::GpuModified),
+                                True(img.flags & ImageFlagBits::CpuModified),
+                                img.info.size.width, img.info.size.height,
+                                static_cast<u32>(img.info.format));
+        }
+        g_yo.pick = fmt::format("req={:#x} cands={} {}", cpu_addr, valid_image_ids.size(), desc);
+        g_yo.pick_cpu = valid_image_ids.size() == 1 ? slot_images[valid_image_ids.front()].cpu_addr : 0;
+    }
     if (valid_image_ids.size() == 1) [[likely]] {
         return GetImageViewForFramebuffer(valid_image_ids.front());
     }
@@ -3542,6 +3557,9 @@ template <class P>
 void TextureCache<P>::MarkModification(ImageBase& image) noexcept {
     image.flags |= ImageFlagBits::GpuModified;
     image.modification_tick = ++modification_tick;
+    if (g_yo.enabled) {
+        g_yo.NoteModified(image.cpu_addr);
+    }
     // Runs for every render target and written storage image of every draw: only images made
     // over unwritten sparse memory need the walks below (each alias is another image's memory).
     if (unwritten_sparse_images == 0) {
