@@ -1944,10 +1944,15 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 const u64 raw = instruction.words[1] | (u64{instruction.words[2] & 0x3ffff} << 32);
                 const s64 relative = static_cast<s64>(raw << 14) >> 14;
                 const s64 target = s64{branch} * 16 + 16 + relative;
+                // No game in the shader dumps branches between the shift and the texture.
+                if (branch > shift_index && branch < index)
+                    return fail(index, "native uniform bindless texture handle provenance");
                 if (target < 0 || target % 16 || target >= static_cast<s64>(code.size()) * 16)
                     return fail(index, "native uniform bindless texture handle provenance");
                 const bool enters_window = target > s64{shift_index} * 16 && target <= s64{index} * 16;
-                if (!enters_window) continue;
+                // A loop back onto the shift runs the window again, so it is checked like one entering it.
+                const bool loops_to_shift = branch >= index && target == s64{shift_index} * 16;
+                if (!enters_window && !loops_to_shift) continue;
                 if (branch < shift_index) return fail(index, "native uniform bindless texture handle provenance");
                 if (branch >= index) entry_limit = std::max(entry_limit, branch + 1);
             }
@@ -1955,6 +1960,9 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             for (u32 between = shift_index + 1; between < entry_limit; ++between) {
                 if (between == index) continue;
                 const u32 op = code[between].Bits(0, 12);
+                // ponytail: a discard or WARPSYNC between shift and texture is refused like upstream; no game
+                // in the shader dumps needs one there.
+                if (op == 0x95b || op == 0x948) return fail(index, "native uniform bindless texture handle provenance");
                 // ponytail: ops the lowering emits as general-register writers (FMUL, FMNMX, LEA, IADD3,
                 // IPA, TEX, MOV, SEL). Their dst is never a uniform register, so they cannot break the pair.
                 const bool register_only = op == 0x308 || op == 0x220 || op == 0xa20 || op == 0xa23 ||
