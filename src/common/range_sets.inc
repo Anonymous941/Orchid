@@ -64,7 +64,8 @@ struct RangeSet<AddressType>::RangeSetImpl {
 
     template <typename Func>
     void ForEachInRange(AddressType base_addr, size_t size, Func&& func) const {
-        if (m_ranges_set.empty()) {
+        // An empty query breaks the set's ordering: at address 0 it visits every range, inverted.
+        if (m_ranges_set.empty() || size == 0) {
             return;
         }
         const AddressType start_address = base_addr;
@@ -153,7 +154,8 @@ struct OverlapRangeSet<AddressType>::OverlapRangeSetImpl {
 
     template <typename Func>
     void ForEachInRange(AddressType base_address, size_t size, Func&& func) const {
-        if (m_split_ranges_set.empty()) {
+        // An empty query breaks the set's ordering: at address 0 it visits every range, inverted.
+        if (m_split_ranges_set.empty() || size == 0) {
             return;
         }
         const AddressType start_address = base_address;
@@ -198,6 +200,7 @@ RangeSet<AddressType>::RangeSet(RangeSet&& other) {
 template <typename AddressType>
 RangeSet<AddressType>& RangeSet<AddressType>::operator=(RangeSet&& other) {
     m_impl->m_ranges_set = std::move(other.m_impl->m_ranges_set);
+    return *this;
 }
 
 template <typename AddressType>
@@ -262,6 +265,7 @@ OverlapRangeSet<AddressType>::OverlapRangeSet(OverlapRangeSet&& other) {
 template <typename AddressType>
 OverlapRangeSet<AddressType>& OverlapRangeSet<AddressType>::operator=(OverlapRangeSet&& other) {
     m_impl->m_split_ranges_set = std::move(other.m_impl->m_split_ranges_set);
+    return *this;
 }
 
 template <typename AddressType>
