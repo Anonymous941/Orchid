@@ -539,6 +539,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Only the channel's changelog and title (.github/release-notes/<channel>.md / .title).
+      - name: Check out release notes
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/release-notes
+          path: source
+
       - name: Download binaries
         uses: actions/download-artifact@v4
         with:
@@ -574,7 +581,20 @@ jobs:
           ls -la dist
           previous=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq \
             '[.[] | select(.tag_name | startswith(env.CHANNEL + "-build-"))][0].tag_name // empty')
+          # A channel can carry a changelog (shown first) and a release title of its own.
+          channel_notes="source/.github/release-notes/$CHANNEL.md"
+          channel_title="source/.github/release-notes/$CHANNEL.title"
+          title="Eglantine $CHANNEL build $GITHUB_RUN_NUMBER (${GITHUB_SHA::7})"
+          if [ -f "$channel_title" ]; then
+            title="$(head -n 1 "$channel_title") – build $GITHUB_RUN_NUMBER (${GITHUB_SHA::7})"
+          fi
           {
+            if [ -f "$channel_notes" ]; then
+              cat "$channel_notes"
+              echo
+              echo "---"
+              echo
+            fi
             if [ -n "$previous" ]; then
               echo "## Changes since $previous"
               echo
@@ -597,5 +617,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "Eglantine $CHANNEL build $GITHUB_RUN_NUMBER (${GITHUB_SHA::7})" \
+            --title "$title" \
             --notes-file notes.md
