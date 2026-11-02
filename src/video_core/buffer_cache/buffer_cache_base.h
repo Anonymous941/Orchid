@@ -560,6 +560,17 @@ private:
         return AsyncBufferDownloads() || memory_tracker.IsRegionPreflushable(device_addr, size);
     }
 
+    /// Whether QueueDownload(addr, size) copies any part of the range back at the next fence:
+    /// all of it (DownloadsAtFence), or the pages of it the guest CPU has read.
+    bool HasFenceDownload(DAddr device_addr, u64 size) {
+        if (DownloadsAtFence(device_addr, size)) {
+            return true;
+        }
+        bool any = false;
+        cpu_read_ranges.ForEachInRange(device_addr, size, [&any](DAddr, DAddr) { any = true; });
+        return any;
+    }
+
     /// GPU writes that are not downloaded at fences: trap the guest CPU's next read of their
     /// pages, which flushes them once and marks them Preflushable (then DownloadsAtFence).
     void ArmReadTraps(DAddr device_addr, u64 size) {
