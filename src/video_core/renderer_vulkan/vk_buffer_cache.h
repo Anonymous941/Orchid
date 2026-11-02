@@ -153,6 +153,14 @@ public:
 
     void BindQuadIndexBuffer(PrimitiveTopology topology, u32 first, u32 count);
 
+    /// A non-indexed indirect quad draw: binds the quad index buffer and converts the arguments
+    /// at src into indexed ones, returned by QuadIndirectArgs.
+    void BindQuadIndirect(VkBuffer src_buffer, u32 src_offset);
+
+    [[nodiscard]] std::pair<VkBuffer, VkDeviceSize> QuadIndirectArgs() const {
+        return quad_indirect_args;
+    }
+
     void BindVertexBuffer(u32 index, VkBuffer buffer, u32 offset, u32 size, u32 stride);
 
     void BindVertexBuffers(VideoCommon::HostBindings<Buffer>& bindings);
@@ -269,6 +277,8 @@ private:
 
     std::unique_ptr<Uint8Pass> uint8_pass;
     QuadIndexedPass quad_index_pass;
+    QuadIndirectPass quad_indirect_pass;
+    std::pair<VkBuffer, VkDeviceSize> quad_indirect_args{};
 
     MultiRangeBufferCache multi_range_buffers;
     boost::container::small_vector<MultiRangeSource, 16> multi_range_sources;

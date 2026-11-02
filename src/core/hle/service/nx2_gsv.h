@@ -1229,6 +1229,7 @@ public:
             // in an 18 minute session).
             {104, &INx2Vi2Session::SucceedQuietly, "Unknown104 (display \"default\")"},
             {105, &INx2Vi2Session::SucceedQuietly, "Unknown105 (display \"default\")"},
+            {106, &INx2Vi2Session::GetRefreshRateMode, "GetRefreshRateMode (display \"default\")"},
             // Display/client setup (title 2): nothing to track while presents composite directly.
             {51, &INx2Vi2Session::SucceedQuietly, "ConfigureRequestGroups"},
             {101, &INx2Vi2Session::OpenDisplay, "OpenDisplay"},
@@ -1571,6 +1572,13 @@ private:
         constexpr u64 AvailableSlots = 0x7fff;
         TipcReplyWords(ctx, {static_cast<u32>(AvailableSlots),
                              static_cast<u32>(AvailableSlots >> 32), 0, 0, 0, 0});
+    }
+
+    // 106(display "default") -> u64 mode. The SDK turns 1 into 60 Hz and 2 into 120 Hz; any other
+    // value (the auto stub's zero) returns 0x1472 and the game terminates.
+    // ponytail: always 60 Hz, matching the 60 Hz vblank pacing; add 120 Hz when a title needs it.
+    void GetRefreshRateMode(HLERequestContext& ctx) {
+        TipcReplyWords(ctx, {1, 0});
     }
 
     void ReturnOne(HLERequestContext& ctx) {
