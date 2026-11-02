@@ -52,6 +52,7 @@ add_executable(tests
     video_core/ampere_kirby.cpp
     video_core/ampere_geometry.cpp
     video_core/ampere_geometry_lowering.cpp
+    video_core/geometry_layer_viewport_relative.cpp
     video_core/ampere_geometry_exit.cpp
     video_core/ampere_uniform_lea.cpp
     video_core/ampere_integer_multiply.cpp
