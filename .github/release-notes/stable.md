@@ -1,49 +1,58 @@
-## What's new in 0.6.0
+## What's new in 0.6.1
 
-0.6.0 is about the two games this fork cares about most, Mario Tennis Fever and Hyrule Warriors:
-Age of Imprisonment, plus fixes for other Switch 2 exclusives.
+0.6.1 brings in Djihads80/Eglantine up to build 177 (132 changes since the last merge) on top of
+0.6.0's fixes, a much faster start of Donkey Kong Bananza, and a freshly trained PGO profile.
 
-### Mario Tennis Fever
+### Donkey Kong Bananza
 
-- **No more stray shadow spots:** dark blobs lay on floors and courts, most of all in Adventure
-  mode, and moved with the camera instead of with anything that casts a shadow. The game draws its
-  four shadow cascades in one pass and asks the GPU (register 0x11F0) to put each cascade into its
-  own layer of the shadow map; that request was ignored, so every cascade landed in the first
-  layer. Fixed on AMD and NVIDIA alike, at the same frame rate. Far shadows that were missing
-  (the lobby's stairs, for example) are drawn now too.
-- **Grass courts have their grass blades again:** the turf is drawn with tessellation shaders,
-  which were rejected, so the grass court rendered flat.
+- **Much faster in the first area:** the game reads GPU-written buffers every frame, and each read
+  waited for the whole host GPU. The game counted that wait as frame time and dropped itself to
+  20 or 30 fps. It now reads the copy that is already back, like Hyrule Warriors: about 59 instead
+  of 22 frames a second after New Game (AMD, docked, 2x).
+- Busy areas later in the game (for example Surf Hills, SL200) are still slow: there the GPU
+  command work itself is the limit, and that is next.
+- Gameplay still renders black on AMD GPUs with the RADV driver (Linux). NVIDIA renders it.
 
-### Hyrule Warriors: Age of Imprisonment
+### From Djihads80/Eglantine (build 177)
 
-- **No freeze at the end of a movie:** the game froze on the last frame of any movie that played
-  to its end (the opening movie, and story movies later on). The video decoder now hands the
-  player's frames back after the end of the stream as the game expects.
-- Logs stay small: a graphics command the game sends about 50 times a second filled most of the
-  log; it is logged once now.
+- **Rumble** in Switch 2 games (Mario Kart World, Kirby Air Riders and others).
+- **Faster crowded scenes:** less work per draw on the GPU thread, fewer render pass splits on tiled
+  GPUs, small uniform buffers reused within a command buffer.
+- **Fire Emblem Fortune's Weave:** its DLSS upscaler is replaced by AMD FSR 3.1.
+- **Pokemon Pokopia:** GPU memory is mapped before later command lists are read, so it no longer
+  stops after its first frame with Low GPU accuracy.
+- **Yoshi and the Mysterious Book:** the demo video picks the right codec and plays.
+- **Mario Kart World:** asks once at boot whether to use its recommended settings (default: No).
+- Sparse tiled images are backed whole when their tiles can't be set up (AMD), more shader handle
+  programs for image and texture buffer descriptors, VP9 video fixes, local wireless (LDN) and room
+  network fixes, NSP containers detected as Switch 2 programs.
+- New defaults: ScaleForce upscaling and FXAA.
 
-### Other games
+### Kept from 0.6.0
 
-- **Donkey Kong Bananza:** the intro after New Game is no longer a flat lavender screen (its
-  upscaler reads and writes the frame through other slots). Gameplay still renders black.
-- **Mario Kart World:** a possible crash in a race ("access violation" in the syncpoint manager,
-  Djihads80/Eglantine#74) is guarded against: a syncpoint id past the table is dropped and logged.
-- **Welcome Tour and Mario Kart World:** the Switch 2 scale, chat and camera commands they send at
-  boot are answered, so they log no unimplemented commands at startup.
+The merge keeps 0.6.0's fixes: Mario Tennis Fever's shadow cascades (0x11F0) and grass, the
+Hyrule Warriors movie-end fix (Djihads' build waits instead; set
+`EDEN_NX2_VDEC_EOS_KEEP_PENDING=1` for that behaviour), Bananza's intro upscaler slots, and the
+Mario Kart World syncpoint guard.
+
+### PGO builds
+
+- The `-pgo` builds use a new profile, trained on this build with Mario Tennis Fever, Hyrule
+  Warriors, Mario Kart World, Donkey Kong Bananza and Kirby Air Riders. The old one predated the
+  current GPU command and readback paths.
 
 ### Tested on this build
 
 Headless on Linux with an AMD GPU (RADV):
 
-- Mario Tennis Fever: the Adventure lobby and a grass-court match at 1x and 2x resolution, 60 fps,
-  no stray shadows.
-- Hyrule Warriors: the opening movie into the cutscene after it, also when skipping with A.
-- All 19 games in the test set boot to their title or menu, except Super Mario Galaxy 2 and the
-  Duskbloods network test (see below).
+- All unit tests pass.
+- Mario Tennis Fever reaches its menu at 60 fps.
+- Hyrule Warriors plays its opening movie to the end into the cutscene after it.
+- Donkey Kong Bananza: New Game into the first area at about 59 fps; a late save loads.
+- Every Switch 2 game in the test set boots to its title or menu.
 
 ### Known issues
 
-- **Super Mario Galaxy 2 (Switch 2 version)** closes about 5 seconds after start: the game's own
-  Vulkan driver fails to create its device. The same happens in 0.5.1.
-- **Donkey Kong Bananza:** gameplay still renders black.
-- The Duskbloods network test isn't part of this release.
+- **Donkey Kong Bananza:** black gameplay on RADV; busy late areas run slowly.
+- **Super Mario Galaxy 2 (Switch 2 version)** closes about 5 seconds after start (its own Vulkan
+  driver fails to create its device), as in 0.6.0.
