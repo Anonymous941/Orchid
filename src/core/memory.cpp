@@ -589,6 +589,9 @@ struct Memory::Impl {
     }
 
     void RasterizerArmReadTraps(u64 vaddr, u64 size) {
+        // Clean cached read areas also need invalidation when reactive flushing is enabled: a
+        // new generation ends the area each core keeps (GetFlushArea no longer marks clean ones).
+        read_traps.NewGeneration();
         if (vaddr == 0 || size == 0 || !AddressSpaceContains(*current_page_table, vaddr, size) ||
             !ReadTrapsEnabled()) {
             return;
