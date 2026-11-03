@@ -2325,8 +2325,10 @@ inline LoweredProgram LowerToMaxwellWith(std::span<const Instruction> code, u32 
             // Bit 74: signed source (Maxwell I2F's bit 13), as in I2FP below.
             const u64 is_signed = insn.Bits(74, 1);
             const u32 mode = insn.words[2] & ~0x400U;
-            if (opcode == 0x306 && mode == 0x00101000 && !(insn.words[1] & 0xcfffff00U)) {
+            if (mode == (opcode == 0xd06 ? 0x08101000U : 0x00101000U) &&
+                !(insn.words[1] & 0xcfffff00U) && source != ~0U) {
                 // I2F.U16/S16 Rd, Rs(.H1): Maxwell's 16-bit source format, byte selector 0 or 2.
+                // Star Fox's final blit converts a uniform U16 this way.
                 emit(base(0x5cb8000000000000ULL) | (u64{2} << 8) | (u64{1} << 10) | (is_signed << 13) |
                      (u64{source} << 20) | (u64{insn.Bits(60, 2) * 2} << 41));
                 break;
