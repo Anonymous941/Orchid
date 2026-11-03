@@ -2573,8 +2573,19 @@ Image::Image(TextureCacheRuntime& runtime_, const ImageInfo& info_, GPUVAddr gpu
         const ImageInfo host_info = TrimmedHostInfo(runtime_.device, info, host_level_offset);
         const u64 texels = u64{host_info.size.width} * host_info.size.height *
                            host_info.size.depth * static_cast<u64>(host_info.resources.layers);
-        if (UsesSparseLayers(runtime_.device, info, gpu_addr_) && InitSparseLayers()) {
+        const bool layered_sparse = UsesSparseLayers(runtime_.device, info, gpu_addr_);
+        if (layered_sparse && InitSparseLayers()) {
             flags |= VideoCommon::ImageFlagBits::SparseLayers;
+        } else if (layered_sparse && !IsUnwrittenSparse(runtime_.device, info, gpu_addr_)) {
+            // Layers that could not be set up (a sparse block the image can't be bound by) would
+            // stay unbound and sample black: back the image whole, as for sparse tiles.
+            LOG_WARNING(Render_Vulkan, "Sparse layered image {:#x}: backing it whole", gpu_addr_);
+            original_image = MakeHostImage(runtime_, info, host_level_offset, gpu_addr_, true);
+            if (!original_image.IsUnbacked()) {
+                flags &= ~VideoCommon::ImageFlagBits::Unbacked;
+            } else if (texels <= (u64{1} << 28)) {
+                flags |= VideoCommon::ImageFlagBits::UnwrittenSparse;
+            }
         } else if (UsesSparseTiles(runtime_.device, info, gpu_addr_)) {
             if (InitSparseTiles()) {
                 flags |= VideoCommon::ImageFlagBits::SparseTiles;
@@ -3116,6 +3127,16 @@ bool Image::InitSparseLayers() {
         u64{granularity.width} * granularity.height * block_bytes == tile) {
         s.tile_width *= block_width;
         s.tile_height *= block_height;
+    }
+    // A block that is not one sparse page of the image can't be bound by (AMD reported 65549 x
+    // 339860304 for title 1's RGBA8 terrain arrays on an RX 9070 XT).
+    if (s.tile_width < block_width || s.tile_height < block_height ||
+        u64{s.tile_width / block_width} * (s.tile_height / block_height) * block_bytes != tile) {
+        LOG_WARNING(Render_Vulkan,
+                    "Sparse layered image {:#x}: driver block {}x{} is not a {} byte page; not "
+                    "using sparse layers",
+                    gpu_addr, granularity.width, granularity.height, tile);
+        return false;
     }
     const u32 tail_lod = (std::min)(it->imageMipTailFirstLod, s.levels);
     VkDeviceSize bytes = 0;
