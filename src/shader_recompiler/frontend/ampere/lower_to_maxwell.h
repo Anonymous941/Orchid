@@ -1600,7 +1600,6 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             if ((!half && !small && !byte && !word) ||
                 ((byte || small || extended_word) &&
                  (insn.Bits(24, 8) || (insn.words[3] & 0xc00001ffU) ||
-                  (opcode == 0xb05 && insn.Bits(62, 2)) ||
                   insn.Bits(91, 1) != static_cast<u32>(opcode == 0xd05))) ||
                 // Register sources may carry |abs| (bit 62) and negate (bit 63), F16 ones .H1 (bit 60).
                 (opcode != 0xb05 && (insn.words[1] & (half ? 0x2fffff00U : 0x3fffff00U))) ||
@@ -1610,8 +1609,10 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             const bool is_signed = insn.Bits(72, 1);
             u32 source = opcode == 0xb05 ? materialize(2, 0, 252, false, false)
                        : opcode == 0xd05 ? uniform_register(insn.Bits(32, 8)) : insn.Bits(32, 8);
-            const bool absolute = opcode != 0xb05 && insn.Bits(62, 1);
-            const bool negate = opcode != 0xb05 && insn.Bits(63, 1);
+            // Constant-buffer sources carry them at the same bits (Pokopia's shadow pass reads
+            // |c[3][0xd0]|); they were dropped for the word forms and rejected for the others.
+            const bool absolute = insn.Bits(62, 1);
+            const bool negate = insn.Bits(63, 1);
             if (half) {
                 extract_half({source, insn.Bits(60, 1) ? 3U : 2U, absolute, negate}, 0, 252);
                 source = 252;

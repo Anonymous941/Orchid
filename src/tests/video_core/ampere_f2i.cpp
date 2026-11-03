@@ -59,6 +59,17 @@ TEST_CASE("Ampere byte F2I materializes constant and uniform sources",
     REQUIRE(static_cast<bool>(constant));
     REQUIRE(constant.instructions.front() ==
             (0x4c98000000070000ULL | 252 | (15ULL << 39) | (4ULL << 20) | (1ULL << 34)));
+    // |c| (bit 62) and -c (bit 63) on the constant are applied by an FADD before the conversion.
+    for (const u32 modifiers : {1U, 2U, 3U}) {
+        auto modified = code;
+        modified[0].words[1] = 0x00400400U | (modifiers << 30);
+        const auto lowered = LowerToMaxwell(modified);
+        REQUIRE(static_cast<bool>(lowered));
+        REQUIRE(lowered.instructions.size() > 1);
+        REQUIRE(lowered.instructions[1] ==
+                (0x5c58000000000000ULL | (7ULL << 16) | 249 | (252ULL << 8) | (255ULL << 20) |
+                 (u64{modifiers & 1} << 46) | (u64{modifiers >> 1} << 48)));
+    }
     for (const u32 source : {0U, 21U, 22U, 27U, 63U}) {
         auto uniform = code;
         uniform[0].words = {0x00157d05, source, 0x0821e100, 0x0001e400};
@@ -92,7 +103,7 @@ TEST_CASE("Ampere byte F2I rejects other widths, rounding, modifiers and registe
         invalid[0].words = {0x00157d05, source, 0x0821e100, 0x0001e400};
         REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(invalid)));
     }
-    for (const u32 source : {0x00400440U, 0x04800400U, 0x40400400U, 0x80400400U}) {
+    for (const u32 source : {0x00400440U, 0x04800400U}) {
         auto invalid = code;
         invalid[0].words = {0x00157b05, source, 0x0021e100, 0x0001e400};
         REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(invalid)));
