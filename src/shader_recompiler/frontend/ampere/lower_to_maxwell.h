@@ -2308,12 +2308,14 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             const u32 uniform_bits = opcode == 0x987 ? 0x080000ffU : (uniform_base ? 0x08000000U : 0U);
             const u32 data = insn.Bits(32, 8), offset = insn.Bits(40, 24);
             const u32 type = insn.Bits(73, 3);
-            const u32 components = type >= 4 && type <= 6 ? 1U << (type - 4) : 0U;
+            // Types 0-3 (U8, S8, U16, S16) move one register's low byte or half, as on Maxwell.
+            const u32 components = type <= 3 ? 1U : type <= 6 ? 1U << (type - 4) : 0U;
+            const u32 alignment = type <= 1 ? 1U : type <= 3 ? 2U : components * 4;
             const u32 mode = insn.words[2] & ~((7U << 9) | uniform_bits);
             u32 value = store ? data : static_cast<u32>(dest);
             if (components == 0 || (store && insn.Bits(16, 8)) ||
-                (uniform_base && (insn.Bits(24, 8) != 255 || base_register == ~0U)) ||
-                (!store && ((data && !uniform_base) || value == 255)) || (offset & (components * 4 - 1)) ||
+                (uniform_base && base_register == ~0U) ||
+                (!store && ((data && !uniform_base) || value == 255)) || (offset & (alignment - 1)) ||
                 offset > 0x7fffff ||
                 (value != 255 && ((value & (components - 1)) ||
                  value + components > (uses_uniform_bank ? 216U : 246U))) ||
@@ -2321,7 +2323,8 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 return fail(index, "native local spill mode");
             u32 address = insn.Bits(24, 8);
             if (base_register != 255) {
-                emit(0x5c10000000000000ULL | predicate | 250 | (u64{255} << 8) | (u64{base_register} << 20));
+                // [Ra + URb + offset] (Kirby Air Riders' menu shaders): IADD the two.
+                emit(0x5c10000000000000ULL | predicate | 250 | (u64{address} << 8) | (u64{base_register} << 20));
                 address = 250;
             }
             if (value == 255) {
