@@ -605,7 +605,12 @@ void Maxwell3D::ProcessMacroUpload(u32 data) {
 }
 
 void Maxwell3D::ProcessMacroBind(u32 data) {
-    GetNativeMacroPositions()[regs.load_mme.start_address_ptr++] = data;
+    // A pointer past the start address table binds nothing, as on the split thread's front.
+    const auto positions = GetNativeMacroPositions();
+    const u32 pointer = regs.load_mme.start_address_ptr++;
+    if (pointer < positions.size()) {
+        positions[pointer] = data;
+    }
 }
 
 void Maxwell3D::ProcessFirmwareCall4() {
