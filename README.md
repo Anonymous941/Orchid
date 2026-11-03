@@ -122,6 +122,38 @@ update checker; `git pull` is the update. Windows (MSVC) and macOS builds are de
 - [Fire Emblem: Fortune's Weave bring-up notes](docs/FE_FORTUNES_WEAVE.md)
 - [Switch 2 loading notes](NX2_NOTES.md)
 - [Development tools](tools)
+- [Fork scan: taking fixes from Eglantine forks](docs/ForkScan.md)
+
+## Credits
+
+Orchid takes fixes from Eglantine and its forks; after every release
+[tools/fork-scan.sh](docs/ForkScan.md) lists what they fixed since. Each ported commit names its
+source and author in its message.
+
+- [zortos293/Eglantine](https://github.com/zortos293/Eglantine) (Zortos), the project Orchid
+  started from: paged scalar guest memory access, SPSCQueue value lifetime, timed Event waits on
+  Windows, GPU teardown order, buffer cache and query fixes, the separate pipeline cache file names.
+  Radu Ursache: no mesh pipelines without `VK_EXT_mesh_shader`.
+- [Djihads80/Eglantine](https://github.com/Djihads80/Eglantine) and its contributors: merged
+  regularly. Idle staging buffers freed (Takoroka), the RangeSet empty-query guard (néo Luigi),
+  test fixes (kraibse).
+- [Selevet Eglantine](https://github.com/sylvieistaken/selevet-eglantine) (sylvieistaken): the
+  windowed GPU mapping table diff, hot loop shortcuts, F2I, local spill and texture query lowering,
+  device memory rebuild on layout changes, decoder end of stream, Windows commit retries, and the
+  GPU wait knobs (`EDEN_NX2_GPU_WAIT_SPIN_US`, `EDEN_NX2_BACK_SPIN`, `EDEN_NX2_ACQUIRE_QUEUED`,
+  `EDEN_NX2_SWAP_STABLE`, `EDEN_NX2_AVX512`).
+- [PokeDinner](https://git.eden-emu.dev/Franseven/PokeDinner-a-Eglantine-Fork) (Franseven,
+  [mirror](https://github.com/Apollo422/PokeDinner)), partly from Eden-NS2: any cache hint on
+  native LDG, SUST with a partial channel mask, `EDEN_AUTO_BUTTONS`.
+- Forks of those: Dee1, Greencus and exploitizm (audio manager lifetime, macro binds past the
+  start table), LucyferDev (A64 saturating shift and multiply-accumulate instructions), FZout (page
+  table block ids, game list titles), sagaopc (NUP directory cycles), Quixomatic (eden-cli, Switch 2
+  module names), YLTai (SDL motion after reconnect), Aidan Kinzett and oledz-i (NUP detection,
+  geometry stream 0), NicholasBly and ominixisboss (dynarmic), kipavy (storage CAS loop),
+  adamhahnHU and arisqz (sparse layered images), Pavel Barabanov and andrewleeog (F2I bits, host1x
+  syncpoint actions), MFS-code (Switch 2 GOB order), CarlosKeese and Dennys Kaluzny Pereira
+  (lowering), failaip12 (memory manager bounds).
+- rdenno: the Mario Tennis Fever fixes in 0.5.1.
 
 ## License
 
