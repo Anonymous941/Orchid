@@ -845,9 +845,11 @@ inline LoweredProgram LowerToMaxwellWith(std::span<const Instruction> code, u32 
             const u32 width = insn.Bits(73, 3);
             const u32 target = uniform_register(uniform_dest);
             const u32 index_target = opcode == 0xabb ? uniform_register(index_reg) : 255U;
-            if (target == ~0U || target == 255 || (width != 4 && width != 5) ||
+            // Widths as Maxwell LDC's: U8/S8/U16/S16 (0-3, Star Fox's blit reads a U16), 32, 64.
+            const u32 align = width < 2 ? 1 : width < 4 ? 2 : 4;
+            if (target == ~0U || target == 255 || width > 5 ||
                 (width == 5 && ((uniform_dest & 1) || uniform_register(uniform_dest + 1) != target + 1)) ||
-                bank() >= 18 || insn.Bits(38, 16) % 4 || insn.Bits(62, 2) ||
+                bank() >= 18 || insn.Bits(38, 16) % align || insn.Bits(62, 2) ||
                 (insn.words[2] & ~0xe00U) != (opcode == 0xab9 ? 0U : 0x08000000U) ||
                 index_target == ~0U)
                 return fail(index, "native uniform constant load mode");
@@ -2325,8 +2327,10 @@ inline LoweredProgram LowerToMaxwellWith(std::span<const Instruction> code, u32 
             // Bit 74: signed source (Maxwell I2F's bit 13), as in I2FP below.
             const u64 is_signed = insn.Bits(74, 1);
             const u32 mode = insn.words[2] & ~0x400U;
-            if (opcode == 0x306 && mode == 0x00101000 && !(insn.words[1] & 0xcfffff00U)) {
+            if (mode == (opcode == 0xd06 ? 0x08101000U : 0x00101000U) &&
+                !(insn.words[1] & 0xcfffff00U) && source != ~0U) {
                 // I2F.U16/S16 Rd, Rs(.H1): Maxwell's 16-bit source format, byte selector 0 or 2.
+                // Star Fox's final blit converts a uniform U16 this way.
                 emit(base(0x5cb8000000000000ULL) | (u64{2} << 8) | (u64{1} << 10) | (is_signed << 13) |
                      (u64{source} << 20) | (u64{insn.Bits(60, 2) * 2} << 41));
                 break;

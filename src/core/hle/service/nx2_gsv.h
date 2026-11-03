@@ -1304,7 +1304,10 @@ inline Nx2ImageLayout Nx2CalculateImageLayout(const u32* preference) {
     }
     const u64 block_rows = u64{1} << layout.block_height_log2;
     layout.size = layout.pitch * Common::AlignUp(u64{layout.height}, block_rows);
-    layout.alignment = std::max<u64>(64 * block_rows, 0x1000);
+    // 4 KiB, not one block (8 KiB at 128 rows): Star Fox places its window textures at offset
+    // 0x1000 in their memory, and NativeWindow::Initialize fails on a misaligned offset, leaving
+    // the NVN window without a native window (null call in NativeWindow::Acquire).
+    layout.alignment = 0x1000;
     return layout;
 }
 
