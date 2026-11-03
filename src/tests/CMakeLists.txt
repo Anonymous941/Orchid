@@ -65,6 +65,7 @@ add_executable(tests
     video_core/geometry_layer_viewport_relative.cpp
     video_core/ampere_geometry_exit.cpp
     video_core/ampere_uniform_lea.cpp
+    video_core/ampere_compute_forms.cpp
     video_core/ampere_integer_multiply.cpp
     video_core/ampere_program_override.cpp
     video_core/x8d24_conversion.cpp

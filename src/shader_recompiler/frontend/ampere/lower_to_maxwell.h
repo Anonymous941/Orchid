@@ -1797,8 +1797,9 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             break;
         }
         case 0x91a: // DEPBAR.LE SB5, 1: scoreboard wait, represented by IR data dependencies.
-            // ponytail: any scoreboard (bits 12-14) and count (6-7) are accepted: async copies are synchronous here.
-            if (insn.words[0] != 0x791a || (insn.words[1] & 0x3fU) || !(insn.words[1] & 0x8000U) || insn.words[2]) {
+            // ponytail: any scoreboard (bits 12-14), count (6-7) and wait list (bits 0-5, Pokopia's
+            // {3,2,1}) are accepted: async copies are synchronous here.
+            if (insn.words[0] != 0x791a || !(insn.words[1] & 0x8000U) || insn.words[2]) {
                 return fail(index, "native dependency barrier mode");
             }
             break;
@@ -2804,14 +2805,17 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 emit(base(0x5c10000000000000ULL) | (u64{250} << 8) | (u64{253} << 20));
                 break;
             }
-            if (insn.Bits(72, 1) || insn.Bits(80, 1) ||
-                insn.Bits(81, 3) == 7 || insn.Bits(62, 2))
+            if (insn.Bits(72, 1) || insn.Bits(80, 1) || insn.Bits(62, 2))
                 return fail(index, "native constant LEA carry mode");
+            // LEA Rd, Ra, c[b][o], s is ISCADD; a carry out (bits 81-83, PT for none) also compares
+            // the sum against the constant, as the low half of a 64-bit address.
             const u32 b = operand(1, false);
             emit(base(0x5c18000000000000ULL) | (u64{insn.Bits(24, 8)} << 8) |
                 (u64{b} << 20) | (u64{insn.Bits(75, 5)} << 39));
-            emit(0x5b60000000000000ULL | predicate | 7 | (u64{insn.Bits(81, 3)} << 3) |
-                (dest << 8) | (u64{b} << 20) | (u64{7} << 39) | (u64{1} << 49));
+            if (insn.Bits(81, 3) != 7) {
+                emit(0x5b60000000000000ULL | predicate | 7 | (u64{insn.Bits(81, 3)} << 3) |
+                    (dest << 8) | (u64{b} << 20) | (u64{7} << 39) | (u64{1} << 49));
+            }
             break;
         }
         case 0xc11: {
