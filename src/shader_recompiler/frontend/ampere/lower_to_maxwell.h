@@ -1660,26 +1660,36 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             }
             break;
         }
-        case 0x370: { // TXQ.B texture dimensions on a handle in a register (bindless).
-            if (insn.Bits(72, 4) == 0 || insn.Bits(72, 4) > 3 || insn.Bits(76, 14) ||
-                insn.Bits(91, 1) || dest >= 254 || (insn.Bits(72, 4) == 3 && (dest & 1)))
+        case 0x370: case 0xb6f: { // TXQ texture dimensions (0x370: TXQ.B, the handle in a register)
+            // As for TEX: the first two enabled outputs go to Rd, Rd+1, the others to the second
+            // destination (bits 64-71; RZ drops them). Maxwell's TXQ writes them to consecutive
+            // registers, so a second destination not after Rd gets them through scratch. Kirby Air
+            // Riders' colour-grading LUT pass asks for a 3D texture's width, height and depth.
+            const bool bindless = opcode == 0x370;
+            const u32 mask = insn.Bits(72, 4), components = static_cast<u32>(std::popcount(mask));
+            const u32 high = insn.Bits(64, 8);
+            const bool consecutive = components <= 2 || high == dest + 2;
+            if (mask == 0 || insn.Bits(76, 14) || insn.Bits(91, 1) || dest >= 254 ||
+                (!consecutive && dest >= 248) ||
+                (components > 1 && (dest & 1)) || (components <= 2 && high != 255) ||
+                (high != 255 && ((components > 3 && (high & 1)) || high >= 248)) ||
+                (!bindless && (insn.Bits(59, 5) || insn.Bits(54, 5) >= 18 || insn.Bits(40, 14) > 0x1fff)))
                 return fail(index, "native texture dimension query mode");
+            if (!bindless) {
+                if (result.required_texture_buffer != ~0U && result.required_texture_buffer != insn.Bits(54, 5))
+                    return fail(index, "native texture descriptor buffer conflict");
+                result.required_texture_buffer = insn.Bits(54, 5);
+            }
             // Maxwell's TXQ (b) takes the handle from the register and one more for the LOD.
-            emit(0xdf50000000000000ULL | predicate | dest | (u64{insn.Bits(24, 8)} << 8) |
-                 (u64{1} << 22) | (u64{insn.Bits(72, 4)} << 31) | (u64{insn.Bits(90, 1)} << 49));
-            break;
-        }
-        case 0xb6f: { // TXQ texture dimensions, two packed scalar outputs.
-            if (insn.Bits(59, 5) || insn.Bits(64, 8) != 255 || insn.Bits(72, 4) == 0 || insn.Bits(72, 4) > 3 ||
-                insn.Bits(76, 14) || insn.Bits(91, 1) || insn.Bits(54, 5) >= 18 ||
-                insn.Bits(40, 14) > 0x1fff || (insn.Bits(72, 4) == 3 && (dest & 1)) || dest >= 254)
-                return fail(index, "native texture dimension query mode");
-            if (result.required_texture_buffer != ~0U && result.required_texture_buffer != insn.Bits(54, 5))
-                return fail(index, "native texture descriptor buffer conflict");
-            result.required_texture_buffer = insn.Bits(54, 5);
-            emit(0xdf48000000000000ULL | predicate | dest | (u64{insn.Bits(24, 8)} << 8) |
-                 (u64{1} << 22) | (u64{insn.Bits(72, 4)} << 31) | (u64{insn.Bits(40, 14)} << 36) |
+            emit((bindless ? 0xdf50000000000000ULL : 0xdf48000000000000ULL) | predicate |
+                 (consecutive ? dest : 248U) | (u64{insn.Bits(24, 8)} << 8) | (u64{1} << 22) |
+                 (u64{mask} << 31) | (bindless ? 0ULL : u64{insn.Bits(40, 14)} << 36) |
                  (u64{insn.Bits(90, 1)} << 49));
+            for (u32 i = 0; !consecutive && i < components; ++i) {
+                if (i >= 2 && high == 255) break;
+                const u32 to = i < 2 ? static_cast<u32>(dest) + i : high + (i - 2);
+                emit(0x5c98000000000000ULL | predicate | to | (u64{15} << 39) | (u64{248 + i} << 20));
+            }
             break;
         }
         case 0xb66: { // TLD.SCR.LZ, direct texel fetch
