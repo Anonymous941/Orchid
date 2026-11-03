@@ -13,11 +13,12 @@ on:
 permissions:
   contents: read
 
-# Clang major the Linux PGO build uses, from apt.llvm.org. A profile is written by a current clang
-# and an older reader refuses it, so this has to stay at or above whatever produced
-# eglantine.profdata; bump it when a refreshed profile needs a newer LLVM.
+# LLVM release the Linux PGO builds compile with (LLVM's own GitHub release). A profile is written
+# by a current clang and an older reader refuses it, so this has to stay at or above whatever
+# produced eglantine.profdata (23.1.4 since 0.6.1); bump it when a refreshed profile needs a newer
+# LLVM.
 env:
-  PGO_LLVM_VERSION: "23"
+  PGO_LLVM_VERSION: "23.1.4"
 
 concurrency:
   group: release-binaries-${{ github.ref }}
@@ -173,25 +174,44 @@ jobs:
           modules: qtcharts
           cache: true
 
-      # Ubuntu's own clang 18 cannot read a profile from a current LLVM, so take clang from the LLVM
-      # apt repo. The versioned packages are named explicitly: that repo's unversioned clang/lld
-      # metapackages can lag the binaries they depend on and then resolve to nothing. lld-23 only
-      # ships ld.lld under /usr/lib/llvm-23/bin, so -B points the linker search there.
+      # Ubuntu's own clang 18 cannot read a profile from a current LLVM, so the -pgo builds take
+      # clang and lld from LLVM's release on GitHub. apt.llvm.org was tried first and failed both
+      # 0.6.1 runs: the runners could not resolve its name, even after retries. Only clang, lld (both
+      # statically linked against LLVM) and clang's headers are unpacked, about 500 MB, and they stay
+      # in the Actions cache, so later runs download nothing.
+      - name: Cache clang for PGO
+        if: startsWith(matrix.platform, 'linux') && matrix.pgo
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/llvm
+          key: pgo-llvm-${{ env.PGO_LLVM_VERSION }}-${{ runner.os }}-${{ runner.arch }}
+
       - name: Install clang for PGO
         if: startsWith(matrix.platform, 'linux') && matrix.pgo
         shell: bash
         run: |
           set -euo pipefail
-          # Retries: a runner once failed to resolve apt.llvm.org for a moment and lost the build.
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 \
-            https://apt.llvm.org/llvm-snapshot.gpg.key |
-            sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
-          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-$PGO_LLVM_VERSION main" |
-            sudo tee /etc/apt/sources.list.d/llvm.list > /dev/null
-          sudo apt-get -o Acquire::Retries=5 update
-          sudo apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
-            "clang-$PGO_LLVM_VERSION" "lld-$PGO_LLVM_VERSION"
-          "clang-$PGO_LLVM_VERSION" --version
+          llvm="$RUNNER_TEMP/llvm"
+          if [ ! -x "$llvm/bin/clang" ] || [ ! -x "$llvm/bin/ld.lld" ]; then
+            case "$RUNNER_ARCH" in
+              X64) arch=X64 ;;
+              ARM64) arch=ARM64 ;;
+              *) echo "::error::no LLVM release build for runner arch $RUNNER_ARCH"; exit 1 ;;
+            esac
+            name="LLVM-$PGO_LLVM_VERSION-Linux-$arch"
+            url="https://github.com/llvm/llvm-project/releases/download/llvmorg-$PGO_LLVM_VERSION/$name.tar.xz"
+            # Into a file first: a retried download piped straight into tar would hand it a broken
+            # stream.
+            curl -fL --retry 5 --retry-all-errors --retry-delay 10 -o "$RUNNER_TEMP/llvm.tar.xz" "$url"
+            rm -rf "$llvm" && mkdir -p "$llvm"
+            tar -xJf "$RUNNER_TEMP/llvm.tar.xz" -C "$llvm" --strip-components=1 --wildcards \
+              "$name/bin/clang" "$name/bin/clang++" "$name/bin/clang-[0-9]*" \
+              "$name/bin/lld" "$name/bin/ld.lld" "$name/lib/clang/*/include/*"
+            rm "$RUNNER_TEMP/llvm.tar.xz"
+          fi
+          echo "PGO_LLVM_ROOT=$llvm" >> "$GITHUB_ENV"
+          "$llvm/bin/clang" --version
+          "$llvm/bin/ld.lld" --version
 
       # The profile is in the source tree, where both the Linux and MSYS2 configure steps read it.
       - name: Check PGO profile
@@ -308,9 +328,9 @@ jobs:
             profile="-fprofile-use=$PWD/eglantine.profdata -Wno-backend-plugin \
               -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date"
             flags+=(
-              "-DCMAKE_C_COMPILER=clang-$PGO_LLVM_VERSION"
-              "-DCMAKE_CXX_COMPILER=clang++-$PGO_LLVM_VERSION"
-              "-DCMAKE_EXE_LINKER_FLAGS=-B/usr/lib/llvm-$PGO_LLVM_VERSION/bin -fuse-ld=lld"
+              "-DCMAKE_C_COMPILER=$PGO_LLVM_ROOT/bin/clang"
+              "-DCMAKE_CXX_COMPILER=$PGO_LLVM_ROOT/bin/clang++"
+              "-DCMAKE_EXE_LINKER_FLAGS=-B$PGO_LLVM_ROOT/bin -fuse-ld=lld"
               "-DCMAKE_C_FLAGS=$profile"
               "-DCMAKE_CXX_FLAGS=$profile"
             )
