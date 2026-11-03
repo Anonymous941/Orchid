@@ -11,21 +11,21 @@
   <br>
   <img src="dist/Orchid.png" alt="Orchid" width="200">
   <br>
-  <b>Orchid (MythosOfs fork)</b>
+  <b>Orchid</b>
   <br>
 </h1>
 
-<h4 align="center">A very experimental Switch 2 emulator. This fork builds on
-<a href="https://github.com/zortos293/Orchid">zortos293/Orchid</a> and carries fixes aimed at
+<h4 align="center">A very experimental Switch 2 emulator. Orchid started from
+<a href="https://github.com/zortos293/Eglantine">Eglantine</a> and has grown into its own project, with fixes aimed at
 Mario Tennis Fever first, plus the shader, kernel and graphics work other games need.</h4>
 
 > [!NOTE]
-> This is an unofficial fork. Problems with these builds are not caused by the zortos293, Orchid
+> Orchid is an independent project. Problems with these builds are not caused by the Eglantine
 > or Eden developers, so please do not report them there.
 
 <p align="center">
   <a href="#branches-and-builds">Branches and builds</a> |
-  <a href="#what-this-fork-changes">What this fork changes</a> |
+  <a href="#what-orchid-adds">What Orchid adds</a> |
   <a href="#download">Download</a> |
   <a href="#build-the-newest-commit-yourself">Build it yourself</a> |
   <a href="#documentation">Documentation</a> |
@@ -45,9 +45,9 @@ Commits land often, but they do not start a build. Release builds are started by
 (Actions > release-binaries > Run workflow), so the newest release can be several commits behind
 its branch. To run the newest commit, [build it yourself](#build-the-newest-commit-yourself).
 
-## What this fork changes
+## What Orchid adds
 
-Compared with zortos293/Orchid:
+Compared with the Eglantine it started from:
 
 - **Mario Tennis Fever:** startup crash fixed, the NVIDIA crash at match start fixed, and per-game
   defaults (low GPU accuracy, balanced fences).
@@ -125,6 +125,6 @@ update checker; `git pull` is the update. Windows (MSVC) and macOS builds are de
 
 ## License
 
-GPLv3 or any later version, see [LICENSE.txt](LICENSE.txt). Based on
-[zortos293/Orchid](https://github.com/zortos293/Orchid), Orchid,
+GPLv3 or any later version, see [LICENSE.txt](LICENSE.txt). Started from
+[Eglantine](https://github.com/zortos293/Eglantine), which builds on
 [Eden](https://git.eden-emu.dev/eden-emu/eden), yuzu and Sudachi.

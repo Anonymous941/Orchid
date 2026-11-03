@@ -5,7 +5,7 @@ pkgver=0.r0.g0000000
 pkgrel=1
 pkgdesc='Nintendo Switch emulator (development branch)'
 arch=('x86_64')
-url='https://github.com/Djihads80/Orchid'
+url='https://github.com/MythosOfs/Orchid'
 license=('GPL-3.0-or-later')
 depends=(
   'enet'
@@ -43,7 +43,7 @@ optdepends=(
 )
 provides=('orchid')
 conflicts=('orchid')
-source=("orchid::git+https://github.com/Djihads80/Orchid.git#branch=nx2")
+source=("orchid::git+https://github.com/MythosOfs/Orchid.git#branch=main")
 sha256sums=('SKIP')
 
 pkgver() {

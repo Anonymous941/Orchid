@@ -451,7 +451,7 @@ std::shared_ptr<const LoweredNativeCode> GenericEnvironment::LowerNativeCode(u32
                                                   support_cooperative_matrix &&
                                                       stage == Shader::Stage::Compute,
                                                   tessellation);
-    // Upstream's lowering covers forms for games without dumps here; it does not know this fork's
+    // Upstream's lowering covers forms for games without dumps here; it does not know Orchid's
     // geometry and tessellation stage rules, so those programs stay with ours.
     if (!lowered && stage != Shader::Stage::Geometry &&
         tessellation == Shader::Ampere::TessellationStage::None) {

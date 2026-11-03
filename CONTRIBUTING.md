@@ -3,7 +3,7 @@
 Orchid has lots of different ways that you can contribute to its efforts, even without knowing how to write code:
 
 - Join our [Discord](https://discord.gg/jCCZ58VExk) community
-- Submit [bug reports or feature requests](https://github.com/Djihads80/Orchid/issues)
+- Submit [bug reports or feature requests](https://github.com/MythosOfs/Orchid/issues)
 - Improve documentation or share reproducible testing results
 - Contribute to our [translation efforts](./dist/languages/README.md)
 
@@ -26,20 +26,20 @@ Orchid is free, open-source, copyleft software, licensed under the terms of the 
 
 ### Where do I start?
 
-Anywhere you like! If you are facing an issue and want to fix it, go ahead. For new features, you are heavily encouraged to open a [feature request](https://github.com/Djihads80/Orchid/issues) first, discussing the motivations, potential implementation, and user flow of your desired feature.
+Anywhere you like! If you are facing an issue and want to fix it, go ahead. For new features, you are heavily encouraged to open a [feature request](https://github.com/MythosOfs/Orchid/issues) first, discussing the motivations, potential implementation, and user flow of your desired feature.
 
-Search the [open issues](https://github.com/Djihads80/Orchid/issues) and [pull requests](https://github.com/Djihads80/Orchid/pulls) before starting to avoid duplicating work. For larger features/refactors, you should first express your interest in the issue to ensure another developer isn't already working on it.
+Search the [open issues](https://github.com/MythosOfs/Orchid/issues) and [pull requests](https://github.com/MythosOfs/Orchid/pulls) before starting to avoid duplicating work. For larger features/refactors, you should first express your interest in the issue to ensure another developer isn't already working on it.
 
 ### Great! Can I contribute already?
 
-Submit a pull request to [Djihads80/Orchid](https://github.com/Djihads80/Orchid). You need a GitHub account; the Eden Forgejo account registration process does not apply here.
+Submit a pull request to [MythosOfs/Orchid](https://github.com/MythosOfs/Orchid). You need a GitHub account; the Eden Forgejo account registration process does not apply here.
 
 1. Fork the Orchid repository to your GitHub account.
-2. Clone your fork and create a branch for your change based on Orchid's `nx2` branch.
+2. Clone your fork and create a branch for your change based on Orchid's `main` branch.
 3. Make a focused change, following the policies above and the [coding guidelines](docs/policies/Coding.md).
 4. Review and test your changes. For code changes, follow the [build documentation](docs/Build.md) for your platform and verify the affected behavior. For documentation changes, preview the Markdown and check the instructions and links.
 5. Commit your changes and push your branch to your fork.
-6. Open a pull request from your branch to `Djihads80/Orchid`, selecting `nx2` as the base branch. Explain the problem, the change, and how you verified it, and link any related issue.
+6. Open a pull request from your branch to `MythosOfs/Orchid`, selecting `main` as the base branch. Explain the problem, the change, and how you verified it, and link any related issue.
 
 Before opening a pull request, make sure your branch is up-to-date with Orchid's `nx2` branch. Follow the [AI policy](docs/policies/AI.md), including its requirements for human-written commit messages and pull request descriptions, disclosure, review, testing, and sign-off.
 

@@ -14,7 +14,7 @@ From the snowstormxd performance fork:
 - Batch shader invalidations, preserving every supplied write range.
 - Clear only the descriptor bitmap words exposed by the current table limit.
 
-Adapted from [Selevet performance build 4](https://github.com/sylvieistaken/selevet-orchid/releases/tag/selevet-orchid-performance-4):
+Adapted from [Selevet performance build 4](https://github.com/sylvieistaken/selevet-eglantine/releases/tag/selevet-eglantine-performance-4):
 
 - Submit native graphics work every 128 draws to overlap GPU execution with CPU
   recording. Other titles retain their existing submission threshold.
