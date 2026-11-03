@@ -4520,7 +4520,10 @@ void TextureCacheRuntime::TranscodeAstcToBcn(
     const u32 height = (std::max)(info.size.height >> skip, 1U);
     const u32 levels = static_cast<u32>(info.resources.levels) - skip;
     const u32 layers = static_cast<u32>(info.resources.layers);
-    constexpr VkFormat DecodeFormat = VK_FORMAT_A8B8G8R8_UNORM_PACK32;
+    // The BC encoder reads this image as layout(rgba8): the same byte layout is not enough, its
+    // storage view must have the matching R8G8B8A8_UNORM format (the ASTC decoder writes it
+    // without a format qualifier).
+    constexpr VkFormat DecodeFormat = VK_FORMAT_R8G8B8A8_UNORM;
     // A decode image of the same shape the GPU is done with: title 1's title screen decodes
     // dozens of textures a frame, mostly of a few shapes. Making one took 263 us; from VMA's
     // shared blocks 90 us, but freeing them there left ~1 GB of those blocks unused.
