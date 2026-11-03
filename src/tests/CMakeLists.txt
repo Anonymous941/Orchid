@@ -12,6 +12,7 @@ add_executable(tests
     common/game_presets.cpp
     common/host_memory.cpp
     common/host_memory_fallback.cpp
+    common/page_table.cpp
     common/paged_scalar.cpp
     common/param_package.cpp
     common/queue_lifetime.cpp
