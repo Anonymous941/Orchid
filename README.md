@@ -9,18 +9,18 @@
 
 <h1 align="center">
   <br>
-  <img src="https://github.com/user-attachments/assets/35031845-4bfa-4916-8bf5-bc3bce67d5e2" alt="Eglantine" width="200">
+  <img src="dist/Orchid.png" alt="Orchid" width="200">
   <br>
-  <b>Eglantine (MythosOfs fork)</b>
+  <b>Orchid (MythosOfs fork)</b>
   <br>
 </h1>
 
 <h4 align="center">A very experimental Switch 2 emulator. This fork builds on
-<a href="https://github.com/zortos293/Eglantine">zortos293/Eglantine</a> and carries fixes aimed at
+<a href="https://github.com/zortos293/Orchid">zortos293/Orchid</a> and carries fixes aimed at
 Mario Tennis Fever first, plus the shader, kernel and graphics work other games need.</h4>
 
 > [!NOTE]
-> This is an unofficial fork. Problems with these builds are not caused by the zortos293, Eglantine
+> This is an unofficial fork. Problems with these builds are not caused by the zortos293, Orchid
 > or Eden developers, so please do not report them there.
 
 <p align="center">
@@ -47,7 +47,7 @@ its branch. To run the newest commit, [build it yourself](#build-the-newest-comm
 
 ## What this fork changes
 
-Compared with zortos293/Eglantine:
+Compared with zortos293/Orchid:
 
 - **Mario Tennis Fever:** startup crash fixed, the NVIDIA crash at match start fixed, and per-game
   defaults (low GPU accuracy, balanced fences).
@@ -66,18 +66,18 @@ Compared with zortos293/Eglantine:
 
 ## Download
 
-Releases are on the [releases page](https://github.com/MythosOfs/Eglantine/releases). Each one has:
+Releases are on the [releases page](https://github.com/MythosOfs/Orchid/releases). Each one has:
 
 | File | For |
 |---|---|
-| `eglantine-<version>-linux-x86_64-pgo.AppImage` | Linux, profile-guided build (preferred) |
-| `eglantine-<version>-linux-x86_64.AppImage` | Linux |
-| `eglantine-<version>-windows-x86_64-pgo.zip` | Windows, profile-guided MinGW build (preferred) |
-| `eglantine-<version>-windows-x86_64.zip` | Windows |
-| `eglantine-<version>-macos-arm64.zip` | macOS 15+ on Apple Silicon, experimental |
+| `orchid-<version>-linux-x86_64-pgo.AppImage` | Linux, profile-guided build (preferred) |
+| `orchid-<version>-linux-x86_64.AppImage` | Linux |
+| `orchid-<version>-windows-x86_64-pgo.zip` | Windows, profile-guided MinGW build (preferred) |
+| `orchid-<version>-windows-x86_64.zip` | Windows |
+| `orchid-<version>-macos-arm64.zip` | macOS 15+ on Apple Silicon, experimental |
 
 Linux: `chmod +x` the AppImage and run it; it needs glibc 2.39 or newer. Windows: extract the zip
-and run `eglantine.exe`.
+and run `orchid.exe`.
 
 ## Build the newest commit yourself
 
@@ -95,12 +95,12 @@ Ubuntu 26.04, Debian 13 and other distributions: see [docs/Deps.md](docs/Deps.md
 Clone `main`, configure and build:
 
 ```sh
-git clone https://github.com/MythosOfs/Eglantine.git
-cd Eglantine
+git clone https://github.com/MythosOfs/Orchid.git
+cd Orchid
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DYUZU_TESTS=OFF \
   -DVulkanHeaders_FORCE_BUNDLED=ON -DVulkanUtilityLibraries_FORCE_BUNDLED=ON
 cmake --build build
-./build/bin/eglantine
+./build/bin/orchid
 ```
 
 Later, to move to the newest commit (only changed files get rebuilt):
@@ -126,5 +126,5 @@ update checker; `git pull` is the update. Windows (MSVC) and macOS builds are de
 ## License
 
 GPLv3 or any later version, see [LICENSE.txt](LICENSE.txt). Based on
-[zortos293/Eglantine](https://github.com/zortos293/Eglantine), Eglantine,
+[zortos293/Orchid](https://github.com/zortos293/Orchid), Orchid,
 [Eden](https://git.eden-emu.dev/eden-emu/eden), yuzu and Sudachi.

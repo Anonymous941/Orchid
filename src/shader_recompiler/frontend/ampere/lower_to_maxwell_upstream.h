@@ -3,7 +3,7 @@
 
 #pragma once
 
-// Upstream's Ampere-to-Maxwell lowering (Djihads80/Eglantine nx2 with rdenno/Eglantine
+// Upstream's Ampere-to-Maxwell lowering (Djihads80/Orchid nx2 with rdenno/Orchid
 // nx2-merged's additions), kept verbatim in its own namespace. It lowers forms for games this fork
 // has no shader dumps of (Splatoon Raiders, mesh and task programs, ...). LowerToMaxwellUpstream runs it only when this fork's lowering rejects a
 // program, so every program is lowered by one implementation from start to end.
