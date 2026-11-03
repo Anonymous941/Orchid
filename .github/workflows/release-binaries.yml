@@ -692,3 +692,30 @@ jobs:
             $prerelease \
             --title "$title" \
             --notes-file notes.md
+
+  # Starts the next release: an issue lists what other Eglantine forks committed since the
+  # previous release and this branch lacks (tools/fork-scan.sh, routine in docs/ForkScan.md).
+  fork-scan:
+    name: Scan other forks
+    needs: release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Open the fork scan issue
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=$(git tag --merged HEAD --sort=-creatordate --list 'v*' | head -1)
+          tools/fork-scan.sh > scan.md
+          # Issue bodies hold 65536 characters.
+          head -c 60000 scan.md > body.md
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "Fork scan after $tag" \
+            --label fork-scan --body-file body.md
