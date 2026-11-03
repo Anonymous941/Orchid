@@ -745,6 +745,10 @@ bool GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,
 }
 
 void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
+    // Task and mesh stages need VK_EXT_mesh_shader; the rasterizer skips their draws without it.
+    if (IsMeshPipeline() && !device.IsExtMeshShaderSupported()) {
+        return;
+    }
     FixedPipelineState::DynamicState dynamic{};
     if (!key.state.extended_dynamic_state) {
         dynamic = key.state.dynamic_state;
