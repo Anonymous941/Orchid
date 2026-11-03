@@ -745,10 +745,16 @@ void RasterizerVulkan::DrawIndirect() {
             }
             return;
         }
-        if (buffer_cache.IsQuadIndirectDraw()) {
-            // Converted by BindHostGeometryBuffers into an indexed draw over the quad indices.
-            scheduler.Record([args = buffer_cache_runtime.QuadIndirectArgs()](vk::CommandBuffer cmdbuf) {
-                cmdbuf.DrawIndexedIndirect(args.first, args.second, 1, 0);
+        if (buffer_cache.IsArrayIndirectDraw()) {
+            // Checked by BindHostGeometryBuffers, quads converted into an indexed draw over the
+            // quad indices.
+            scheduler.Record([args = buffer_cache_runtime.ArrayIndirectArgs(),
+                              quads = buffer_cache.IsQuadIndirectDraw()](vk::CommandBuffer cmdbuf) {
+                if (quads) {
+                    cmdbuf.DrawIndexedIndirect(args.first, args.second, 1, 0);
+                } else {
+                    cmdbuf.DrawIndirect(args.first, args.second, 1, 0);
+                }
             });
             return;
         }
