@@ -163,6 +163,10 @@ public:
 
     void BindQuadIndexBuffer(PrimitiveTopology topology, u32 first, u32 count);
 
+    /// Grows the quad index buffer for BindArrayIndirect. Growing it submits the command buffer,
+    /// so this runs before the draw binds its vertex buffers.
+    void ReserveQuadIndirect();
+
     /// A single non-indexed indirect draw: checks the arguments at src, returned by
     /// ArrayIndirectArgs. Quads also bind the quad index buffer and are converted to indexed.
     void BindArrayIndirect(VkBuffer src_buffer, u32 src_offset, bool quads);
