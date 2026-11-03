@@ -14,6 +14,7 @@ add_executable(tests
     common/host_memory_fallback.cpp
     common/paged_scalar.cpp
     common/param_package.cpp
+    common/queue_lifetime.cpp
     common/range_map.cpp
     common/range_set_move.cpp
     common/ring_buffer.cpp
