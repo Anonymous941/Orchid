@@ -9,6 +9,10 @@
 #include <map>
 #include <string>
 #include <utility>
+#ifdef EGLANTINE_PGO_GENERATE
+#include <chrono>
+#include <thread>
+#endif
 
 #include "startup_checks.h"
 
@@ -141,7 +145,28 @@ static void LoadNx2Switches(const char* argv0) {
     }
 }
 
+#ifdef EGLANTINE_PGO_GENERATE
+// Training build only (-fprofile-generate -DEGLANTINE_PGO_GENERATE): a stopped game can leave the
+// process unable to exit normally, which would lose the profile, so it is saved every 30 s. The
+// default profile name merges into the file, so each save adds only the counts since the last one.
+extern "C" int __llvm_profile_write_file(void);
+extern "C" void __llvm_profile_reset_counters(void);
+static void StartProfileWriter() {
+    std::thread([] {
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::seconds{30});
+            if (__llvm_profile_write_file() == 0) {
+                __llvm_profile_reset_counters();
+            }
+        }
+    }).detach();
+}
+#endif
+
 int main(int argc, char* argv[]) {
+#ifdef EGLANTINE_PGO_GENERATE
+    StartProfileWriter();
+#endif
     LoadNx2Switches(argv[0]);
 
 #if YUZU_ROOM
