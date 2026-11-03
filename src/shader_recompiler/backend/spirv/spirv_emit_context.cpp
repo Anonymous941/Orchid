@@ -1577,6 +1577,8 @@ void EmitContext::DefineInputs(const IR::Program& program) {
     if (loads[IR::Attribute::PrimitiveId]) {
         primitive_id = DefineInput(*this, U32[1], false, spv::BuiltIn::PrimitiveId);
         if (stage == Stage::Fragment) {
+            // A fragment PrimitiveId input needs the Geometry capability (as Layer below).
+            AddCapability(spv::Capability::Geometry);
             Decorate(primitive_id, spv::Decoration::Flat);
         }
     }
