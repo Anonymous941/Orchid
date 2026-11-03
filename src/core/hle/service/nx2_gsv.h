@@ -2431,16 +2431,19 @@ private:
             // image it releases, waits that fence and asks 213 for the image's frame; an empty
             // reply (0x1c286f) froze the game on a movie's last frame. The image stays out of
             // m_free and uncounted, so later frames (the player keeps submitting empty
-            // end-of-stream inputs) still fill images in the order their fences count. Bananza
-            // acquires a frame for every completed fence, which the handed back frame gives it.
+            // end-of-stream inputs) still fill images in the order their fences count.
             // EDEN_NX2_VDEC_EOS_KEEP_PENDING=1 keeps such fences pending until Stop or Finalize
-            // instead (Djihads build 177 behaviour).
+            // instead (Djihads build 177 behaviour). Donkey Kong Bananza always keeps them
+            // pending: it acquires the handed back frames, then flushes and restarts its looping
+            // hint movies and gives both images back, and now and then aborts (2162-0001) right
+            // after the restart; its pending fences are filled by the restarted movie.
             static const bool keep_pending = [] {
                 const char* env = std::getenv("EDEN_NX2_VDEC_EOS_KEEP_PENDING");
                 return env != nullptr && env[0] != '0';
             }();
-            if (!keep_pending && release_fence && m_stream_ended && m_inputs.empty() &&
-                m_decoded.empty()) {
+            const bool bananza = system.GetApplicationProcessProgramID() == 0x040074A01BF12000ULL;
+            if (!keep_pending && !bananza && release_fence && m_stream_ended &&
+                m_inputs.empty() && m_decoded.empty()) {
                 value = static_cast<u32>(
                     system.Host1x().GetSyncpointManager().GetGuestSyncpointValue(m_syncpoint));
                 m_outputs.push_back({image, m_out_width, m_out_height, 0, true, true});
