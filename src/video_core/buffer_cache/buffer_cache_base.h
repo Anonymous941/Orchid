@@ -240,6 +240,9 @@ public:
     void ResolveMultiRangeStorage(Binding& binding, bool is_written,
                                   std::vector<MultiRangeSegment>& pool);
 
+    /// Finds buffers again for segments whose buffer a later lookup deleted (merged away).
+    void RefreshMultiRangeSegments(std::span<MultiRangeSegment> pool);
+
     void UnmapGPUMemory(size_t as_id, GPUVAddr gpu_addr, size_t size);
 
     void WriteMemory(DAddr device_addr, u64 size);

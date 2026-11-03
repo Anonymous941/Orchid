@@ -1259,7 +1259,13 @@ bool BufferCache<P>::BindMultiRangeStorage(const Binding& binding, bool is_writt
         if (binding.segment_count < 2) {
             return false;
         }
-        if (binding.segment_first + binding.segment_count > pool.size()) {
+        if (binding.segment_first > pool.size() ||
+            binding.segment_count > pool.size() - binding.segment_first) {
+            return false;
+        }
+        const auto segments = pool.subspan(binding.segment_first, binding.segment_count);
+        if (std::ranges::any_of(segments,
+                                [](const MultiRangeSegment& segment) { return !segment.buffer_id; })) {
             return false;
         }
         const u64 key = (static_cast<u64>(gpu_memory->GetID()) << 48) ^ binding.gpu_addr;
@@ -1280,6 +1286,27 @@ bool BufferCache<P>::BindMultiRangeStorage(const Binding& binding, bool is_writt
         return runtime.BindMultiRangeStorageBuffer(key, is_written);
     } else {
         return false;
+    }
+}
+
+template <class P>
+void BufferCache<P>::RefreshMultiRangeSegments(std::span<MultiRangeSegment> pool) {
+    if constexpr (requires { runtime.BindMultiRangeStorageBuffer(u64{}, bool{}); }) {
+        const bool prefer_sparse = runtime.PrefersSparseSources();
+        // Finding one segment's buffer can merge away another's: retry a bounded number of times,
+        // BindMultiRangeStorage refuses a binding that still has a dead segment.
+        for (u32 pass = 0; pass < 16; ++pass) {
+            bool all_live = true;
+            for (MultiRangeSegment& segment : pool) {
+                if (!segment.buffer_id) {
+                    segment.buffer_id = FindBuffer(segment.device_addr, segment.size, prefer_sparse);
+                    all_live = false;
+                }
+            }
+            if (all_live) {
+                return;
+            }
+        }
     }
 }
 
@@ -1506,6 +1533,7 @@ void BufferCache<P>::DoUpdateGraphicsBuffers(bool is_indexed) {
         if (current_draw_indirect) {
             UpdateDrawIndirect();
         }
+        RefreshMultiRangeSegments(graphics_segments);
     });
 }
 
@@ -1516,6 +1544,7 @@ void BufferCache<P>::DoUpdateComputeBuffers() {
         UpdateComputeUniformBuffers();
         UpdateComputeStorageBuffers();
         UpdateComputeTextureBuffers();
+        RefreshMultiRangeSegments(compute_segments);
     });
 }
 
@@ -2476,6 +2505,14 @@ void BufferCache<P>::DeleteBuffer(BufferId buffer_id, bool do_not_mark) {
     replace(channel_state->transform_feedback_buffers);
     replace(channel_state->compute_uniform_buffers);
     replace(channel_state->compute_storage_buffers);
+    // Segments resolved earlier in this update can point at a buffer a later lookup merged away.
+    for (auto* const pool : {&graphics_segments, &compute_segments}) {
+        for (MultiRangeSegment& segment : *pool) {
+            if (segment.buffer_id == buffer_id) {
+                segment.buffer_id = BufferId{};
+            }
+        }
+    }
 
     // Mark the whole buffer as CPU written to stop tracking CPU writes
     if (!do_not_mark) {
