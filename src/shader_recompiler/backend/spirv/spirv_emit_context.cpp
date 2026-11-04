@@ -16,6 +16,7 @@
 #include "common/common_types.h"
 #include "common/div_ceil.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
+#include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 
 namespace Shader::Backend::SPIRV {
@@ -1040,17 +1041,17 @@ void EmitContext::DefineGlobalMemoryFunctions(const Info& info) {
                 continue;
             }
             const auto& ssbo{info.storage_buffers_descriptors[index]};
-            const Id ssbo_addr_cbuf_offset{Const(ssbo.cbuf_offset / 8)};
-            const Id ssbo_size_cbuf_offset{Const(ssbo.cbuf_offset / 4 + 2)};
-            const Id ssbo_addr_pointer{OpAccessChain(
-                uniform_types.U32x2, cbufs[ssbo.cbuf_index].U32x2, zero, ssbo_addr_cbuf_offset)};
-            const Id ssbo_size_pointer{OpAccessChain(uniform_types.U32, cbufs[ssbo.cbuf_index].U32,
-                                                     zero, ssbo_size_cbuf_offset)};
+            // The cbuf readers pick the declared uniform view, so this also works without
+            // descriptor aliasing (only the U32x4 view exists there).
+            const Id addr_words{EmitGetCbufU32x2(*this, IR::Value{ssbo.cbuf_index},
+                                                 IR::Value{ssbo.cbuf_offset})};
+            const Id size_word{EmitGetCbufU32(*this, IR::Value{ssbo.cbuf_index},
+                                              IR::Value{ssbo.cbuf_offset + 8})};
 
             const u64 ssbo_align_mask{~(profile.min_ssbo_alignment - 1U)};
-            const Id unaligned_addr{OpBitcast(U64, OpLoad(U32[2], ssbo_addr_pointer))};
+            const Id unaligned_addr{OpBitcast(U64, addr_words)};
             const Id ssbo_addr{OpBitwiseAnd(U64, unaligned_addr, Constant(U64, ssbo_align_mask))};
-            const Id ssbo_size{OpUConvert(U64, OpLoad(U32[1], ssbo_size_pointer))};
+            const Id ssbo_size{OpUConvert(U64, size_word)};
             const Id ssbo_end{OpIAdd(U64, ssbo_addr, ssbo_size)};
             const Id cond{OpLogicalAnd(U1, OpUGreaterThanEqual(U1, addr, ssbo_addr),
                                        OpULessThan(U1, addr, ssbo_end))};
@@ -1071,6 +1072,19 @@ void EmitContext::DefineGlobalMemoryFunctions(const Info& info) {
         const Id function_type{TypeFunction(type, U64)};
         const Id func_id{OpFunction(type, spv::FunctionControlMask::MaskNone, function_type)};
         const Id addr{OpFunctionParameter(U64)};
+        if (!profile.support_descriptor_aliasing && shift > 2) {
+            // Without aliasing only the U32 storage view is declared: load word by word.
+            AddLabel();
+            std::array<Id, 4> words;
+            const u32 count{1U << (shift - 2)};
+            for (u32 i = 0; i < count; ++i) {
+                const Id word_address{OpIAdd(U64, addr, Constant(U64, i * sizeof(u32)))};
+                words[i] = OpFunctionCall(U32[1], load_global_func_u32, word_address);
+            }
+            OpReturnValue(OpCompositeConstruct(type, std::span{words}.first(count)));
+            OpFunctionEnd();
+            return func_id;
+        }
         define_body(ssbo_member, addr, element_pointer, shift,
                     [&](Id ssbo_pointer) { OpReturnValue(OpLoad(type, ssbo_pointer)); });
         OpReturnValue(ConstantNull(type));
@@ -1082,6 +1096,18 @@ void EmitContext::DefineGlobalMemoryFunctions(const Info& info) {
         const Id func_id{OpFunction(void_id, spv::FunctionControlMask::MaskNone, function_type)};
         const Id addr{OpFunctionParameter(U64)};
         const Id data{OpFunctionParameter(type)};
+        if (!profile.support_descriptor_aliasing && shift > 2) {
+            AddLabel();
+            const u32 count{1U << (shift - 2)};
+            for (u32 i = 0; i < count; ++i) {
+                const Id word_address{OpIAdd(U64, addr, Constant(U64, i * sizeof(u32)))};
+                const Id word{OpCompositeExtract(U32[1], data, i)};
+                OpFunctionCall(void_id, write_global_func_u32, word_address, word);
+            }
+            OpReturn();
+            OpFunctionEnd();
+            return func_id;
+        }
         define_body(ssbo_member, addr, element_pointer, shift, [&](Id ssbo_pointer) {
             OpStore(ssbo_pointer, data);
             OpReturn();
