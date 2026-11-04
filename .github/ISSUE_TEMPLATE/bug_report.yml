@@ -12,6 +12,7 @@ body:
       - label: I have searched the existing issues
         required: true
   - type: input
+    id: build
     attributes:
       label: Affected Build(s)
       description: List the affected build(s) that this issue applies to.
