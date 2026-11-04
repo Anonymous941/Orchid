@@ -153,6 +153,13 @@ source and author in its message.
   adamhahnHU and arisqz (sparse layered images), Pavel Barabanov and andrewleeog (F2I bits, host1x
   syncpoint actions), MFS-code (Switch 2 GOB order), CarlosKeese and Dennys Kaluzny Pereira
   (lowering), failaip12 (memory manager bounds).
+- After 0.6.3: godpow and its contributors nowhere02, xDarkWindx, Duck912, ZnOw01 and CloudP4bbs
+  (buffer, texture and staging cache guards, descriptor growth, GPU split wake-up recovery, NPad
+  update filter), failaip12 via cira0100 (data races, UBSan fixes, audio and SDL locking),
+  monteger8 for adamd (Donkey Kong Bananza buffer cache skips, indirect draw reset by hash), Aidan
+  Kinzett (NV12 video decoder), Jonas via jojo-chaechae (x64 call reach, Switch 2 channel setup),
+  SavageCore (mod root guards), cblock85, christianball123, Khobzpro, larryliu985, Doughston
+  (n-popescu) and Xnos666.
 - rdenno: the Mario Tennis Fever fixes in 0.5.1.
 
 ## License
