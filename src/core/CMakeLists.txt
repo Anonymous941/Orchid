@@ -1046,6 +1046,7 @@ add_library(core STATIC
     hle/service/nx2_gsv.h
     hle/service/nx2_gsv_server.h
     hle/service/nx2_sparse_region.h
+    hle/service/nx2_video_ready.h
     hle/service/services.cpp
     hle/service/services.h
     hle/service/set/factory_settings_server.cpp
