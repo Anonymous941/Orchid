@@ -2189,6 +2189,9 @@ void BufferCache<P>::JoinOverlap(BufferId new_buffer_id, BufferId overlap_id,
 template <class P>
 BufferId BufferCache<P>::CreateBuffer(DAddr device_addr, u32 wanted_size,
                                       bool sparse_compatible) {
+    // The synchronized-range tables hold Buffer pointers and ids that this may move or reuse.
+    nx2_synced_ranges.fill({});
+    nx2_synced_vertex_buffers.fill({});
     DAddr device_addr_end = Common::AlignUp(device_addr + wanted_size, CACHING_PAGESIZE);
     device_addr = Common::AlignDown(device_addr, CACHING_PAGESIZE);
     wanted_size = static_cast<u32>(device_addr_end - device_addr);
@@ -2566,6 +2569,8 @@ void BufferCache<P>::DownloadBufferMemory(Buffer& buffer, DAddr device_addr, u64
 
 template <class P>
 void BufferCache<P>::DeleteBuffer(BufferId buffer_id, bool do_not_mark) {
+    nx2_synced_ranges.fill({});
+    nx2_synced_vertex_buffers.fill({});
     if (buffer_id == inline_buffer_id) {
         // The garbage collector can delete the inline index buffer; recreate it on next use.
         inline_buffer_id = NULL_BUFFER_ID;
