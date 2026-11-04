@@ -72,6 +72,7 @@ add_executable(tests
     video_core/x8d24_conversion.cpp
     video_core/ampere_bindless_tex.cpp
     video_core/ampere_sured.cpp
+    video_core/ampere_yoshi_surface.cpp
     video_core/ampere_release_guards.cpp
     video_core/ampere_release_f2i.cpp
     video_core/syncpoint_manager.cpp
