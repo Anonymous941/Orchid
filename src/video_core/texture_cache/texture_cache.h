@@ -2950,6 +2950,11 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
         DeleteImage(copy_object.id);
     }
 
+    NoteAliasTick(new_image);
+    for (const AliasedImage& alias : new_image.aliased_images) {
+        new_image.alias_modification_tick = (std::max)(new_image.alias_modification_tick,
+                                                       slot_images[alias.id].modification_tick);
+    }
     RegisterImage(new_image_id);
     return new_image_id;
 }
@@ -3918,6 +3923,7 @@ template <class P>
 void TextureCache<P>::MarkModification(ImageBase& image) noexcept {
     image.flags |= ImageFlagBits::GpuModified;
     image.modification_tick = ++modification_tick;
+    NoteAliasTick(image);
     if (g_yo.enabled) {
         g_yo.NoteModified(image.cpu_addr);
     }
@@ -3935,9 +3941,22 @@ void TextureCache<P>::MarkModification(ImageBase& image) noexcept {
 }
 
 template <class P>
+void TextureCache<P>::NoteAliasTick(const ImageBase& image) {
+    for (const AliasedImage& alias : image.aliased_images) {
+        ImageBase& aliased_image = slot_images[alias.id];
+        aliased_image.alias_modification_tick =
+            (std::max)(aliased_image.alias_modification_tick, image.modification_tick);
+    }
+}
+
+template <class P>
 void TextureCache<P>::SynchronizeAliases(ImageId image_id) {
-    boost::container::small_vector<const AliasedImage*, 8> aliased_images;
     Image& image = slot_images[image_id];
+    // Sampled images with hundreds of aliases walked them all for every draw.
+    if (image.modification_tick >= image.alias_modification_tick) {
+        return;
+    }
+    boost::container::small_vector<const AliasedImage*, 8> aliased_images;
     bool any_rescaled = True(image.flags & ImageFlagBits::Rescaled);
     bool any_modified = True(image.flags & ImageFlagBits::GpuModified);
     u64 most_recent_tick = image.modification_tick;
@@ -3962,6 +3981,7 @@ void TextureCache<P>::SynchronizeAliases(ImageId image_id) {
         }
     }
     image.modification_tick = most_recent_tick;
+    NoteAliasTick(image);
     if (any_modified) {
         image.flags |= ImageFlagBits::GpuModified;
     }
