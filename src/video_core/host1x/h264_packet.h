@@ -11,6 +11,11 @@ namespace Tegra::Host1x {
 
 class H264PacketConverter {
 public:
+    /// A new stream may be framed the other way.
+    void Reset() {
+        format = Format::Unknown;
+    }
+
     void Convert(std::span<u8> data) {
         if (format == Format::AnnexB) {
             return;
