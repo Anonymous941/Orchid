@@ -161,7 +161,8 @@ source and author in its message.
 
 - [zortos293/Eglantine](https://github.com/zortos293/Eglantine) (Zortos), the project Orchid
   started from: paged scalar guest memory access, SPSCQueue value lifetime, timed Event waits on
-  Windows, GPU teardown order, buffer cache and query fixes, the separate pipeline cache file names.
+  Windows, GPU teardown order, buffer cache and query fixes, native Ampere nanosecond timestamps,
+  the separate pipeline cache file names.
   Radu Ursache: no mesh pipelines without `VK_EXT_mesh_shader`.
 - [Djihads80/Eglantine](https://github.com/Djihads80/Eglantine) and its contributors: merged
   regularly. Idle staging buffers freed (Takoroka), the RangeSet empty-query guard (néo Luigi),
