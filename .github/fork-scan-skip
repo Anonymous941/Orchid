@@ -167,3 +167,31 @@ d2ddd044b Vortex727/eglantine-zortos293: 256-slot query cap truncates valid long
 87203d593 Vortex727/eglantine-zortos293: 256-slot query cap truncates valid long queries without compaction
 936aca8d9 pattex67/Aubepine: 256-slot query cap truncates valid long queries without compaction
 baf60ba8 larryliu985/Eglantine: Orchid already tracks ISBEWR data registers; resetting occlusion queries after one bank can truncate valid long reset-to-report windows
+f26ad432a zortos293/Eglantine: broad Ocarina rendering bundle mixes title-specific pointer tables, cache behavior, timing and diagnostics; reviewed individual fixes separately, not safe as a whole
+f356d39ba zortos293/Eglantine: mixed Ocarina Ampere bundle; carries, indexed subword ULDC and P2R call accounting already exist in Orchid, remaining two-source F2IP expansion needs separate validation
+7c0b5e791 zortos293/Eglantine: page-table range caching is a profiling-led performance change; separate Orchid invalidation and benchmark review needed
+0db1cdbd8 zortos293/Eglantine: XCI/XCZ program metadata already uses Loader::ReadProgramMetadata before clock selection
+91d525da3 CloudP4bbs/Eglantine: extended ISETP and ARRAY_2D TLD4 already handled by Orchid's broader lowering
+1a8f736fb chuppatricky/Lichii: per-tap, half-output and depth-compare TLD4 forms already handled by Orchid's broader lowering
+678a3f5c4 hedigrrr1/Hedfix: indexed U8/S8/U16/S16 ULDC widths already handled by Orchid; existing alignment restrictions remain intentional
+0eb5ab566 trianglebraindev/Lichii: indexed subword ULDC forms already handled by Orchid
+175993701 trianglebraindev/Lichii: UIADD3 carry through any UPn already handled by Orchid
+cda9d498e trianglebraindev/Lichii: ULEA carry through any UPn already handled by Orchid
+3815e14a5 hedigrrr1/Hedfix: ULEA carry and P2R register-write accounting already handled by Orchid
+d31c027b6 trianglebraindev/Lichii: native MME DMA read already flushes QueryCache and BufferCache before reading
+7859ef415 Deidakom/Peachy: duplicate of the native MME QueryCache/BufferCache flush already in Orchid
+12bb1815f larryliu985/Eglantine: ISBEWR handling already exists; resetting after one query bank can truncate valid long reset-to-report windows
+161f5e9bb chuppatricky/Lichii: fence-submit fix requires Scheduler::DeferFlush/FlushDeferred absent from Orchid; Orchid's InnerFence queues and flushes directly
+f0d3ce0ed larryliu985/Eglantine: Orchid Drain waits through BackLoop completion before front Puller work; no concurrent idle hook or context rotation exists
+ceed7ca7f Shenopi/Lichii: duplicate of 161f5e9bb; Orchid has no deferred-work submit path
+bca2feb05 Drizz1le/Lichii: duplicate deferred-fence submit fix; Orchid has no Scheduler::DeferFlush path
+592dcfba1 sexyboomer888-gif/Lichii: duplicate deferred-fence submit fix; Orchid has no Scheduler::DeferFlush path
+6ab6131a5 sexyboomer888-gif/Lichii: helper declaration for deferred-fence submission, inapplicable without that scheduler path
+edaf83169 sexyboomer888-gif/Lichii: helper flush for deferred submissions, inapplicable without that scheduler path
+459b53ed3 Drizz1le/Lichii: clear-overwritten guest upload already ported from zortos293/Eglantine 27226d256
+dafcd6c78 Drizz1le/Lichii: clear-overwritten upload IsFullClear follow-up already ported from zortos293/Eglantine 27226d256
+1123229ba sexyboomer888-gif/Lichii: duplicate of clear-overwritten guest upload ported from zortos293/Eglantine 27226d256
+ae7037b65 Shenopi/Lichii: RED/SURED data-register shadowing is being ported from chuppatricky/Lichii fc5d6dc31
+2416d0968 Drizz1le/Lichii: duplicate RED/SURED data-register shadowing ported from chuppatricky/Lichii fc5d6dc31
+40631acb6 Jav1B/Lichii: duplicate RED/SURED data-register shadowing ported from chuppatricky/Lichii fc5d6dc31
+fe6a388a4 zortos293/Eglantine: draw-only guard leaves transform-feedback/query counter lifecycle commands unpaired after a failed bind; safe adaptation needs coordinated state handling
