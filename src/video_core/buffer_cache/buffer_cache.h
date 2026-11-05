@@ -1342,13 +1342,18 @@ bool BufferCache<P>::BindMultiRangeStorage(const Binding& binding, bool is_writt
             SynchronizeBuffer(buffer, segment.device_addr, segment.size);
             const u32 offset = buffer.Offset(segment.device_addr);
             buffer.MarkUsage(offset, segment.size);
-            if (is_written) {
-                MarkWrittenBuffer(segment.buffer_id, segment.device_addr, segment.size);
-            }
             runtime.PushMultiRangeSource(buffer, offset, segment.size);
         }
         runtime.InvalidateMultiRange(key);
-        return runtime.BindMultiRangeStorageBuffer(key, is_written);
+        if (!runtime.BindMultiRangeStorageBuffer(key, is_written)) {
+            return false;
+        }
+        if (is_written) {
+            for (const MultiRangeSegment& segment : segments) {
+                MarkWrittenBuffer(segment.buffer_id, segment.device_addr, segment.size);
+            }
+        }
+        return true;
     } else {
         return false;
     }
@@ -1525,15 +1530,18 @@ template <class P>
 void BufferCache<P>::BindHostComputeStorageBuffers() {
     u32 binding_index = 0;
     ForEachEnabledBit(channel_state->enabled_compute_storage_buffers, [&](u32 index) {
-        const Binding& binding = channel_state->compute_storage_buffers[index];
+        Binding& binding = channel_state->compute_storage_buffers[index];
         const bool is_written =
             ((channel_state->written_compute_storage_buffers >> index) & 1) != 0;
         if (BindMultiRangeStorage(binding, is_written, compute_segments)) {
             return;
         }
+        const u32 size = binding.physical_size ? binding.physical_size : binding.size;
+        if (!binding.buffer_id && size != 0) {
+            binding.buffer_id = FindBuffer(binding.device_addr, size, false);
+        }
         Buffer& buffer = slot_buffers[binding.buffer_id];
         TouchBuffer(buffer, binding.buffer_id);
-        const u32 size = binding.size;
         SynchronizeBuffer(buffer, binding.device_addr, size);
 
         const u32 offset = buffer.Offset(binding.device_addr);
@@ -1858,7 +1866,8 @@ void BufferCache<P>::UpdateComputeStorageBuffers() {
     ForEachEnabledBit(channel_state->enabled_compute_storage_buffers, [&](u32 index) {
         // Resolve buffer
         Binding& binding = channel_state->compute_storage_buffers[index];
-        binding.buffer_id = FindBuffer(binding.device_addr, binding.size, false);
+        const u32 physical_size = binding.physical_size ? binding.physical_size : binding.size;
+        binding.buffer_id = FindBuffer(binding.device_addr, physical_size, false);
         const bool is_written =
             ((channel_state->written_compute_storage_buffers >> index) & 1) != 0;
         ResolveMultiRangeStorage(binding, is_written, compute_segments);
@@ -2738,8 +2747,12 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
             table_pointer || native_compute ? 0 : gpu_memory->Read<u64>(ssbo_addr + 8);
         const u32 limit = StorageBufferSizeLimit(memory_layout_size, next_qword, table_pointer,
                                                 native_compute, is_written);
-        if ((table_pointer || native_compute) && limit != 0) {
+        if (table_pointer && limit != 0) {
             return static_cast<u32>(gpu_memory->MaxContinuousRange(gpu_addr, limit));
+        }
+        if (native_compute && limit != 0) {
+            const auto ranges = gpu_memory->GetSubmappedRange(gpu_addr, limit);
+            return StorageBufferMappedPrefix(gpu_addr, limit, ranges);
         }
         return limit;
     }();
@@ -2763,14 +2776,23 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
     const DAddr cpu_end = Common::AlignUp(*device_addr + size, Core::DEVICE_PAGESIZE);
 
     u32 binding_size = static_cast<u32>(cpu_end - *aligned_device_addr);
-    if (is_written) {
+    if (is_written || (native_compute && !table_pointer)) {
         binding_size = aligned_size;
+    }
+    // Keep a safe fallback if multi-range storage cannot be used (including non-sparse writes).
+    // Starting from the aligned address also checks that the alignment prefix is contiguous.
+    const u32 physical_size = native_compute && !table_pointer
+        ? static_cast<u32>(gpu_memory->MaxContinuousRange(aligned_gpu_addr, binding_size))
+        : 0;
+    if (native_compute && !table_pointer && physical_size <= gpu_addr - aligned_gpu_addr) {
+        return NULL_BINDING;
     }
     const Binding binding{
         .device_addr = *aligned_device_addr,
         .gpu_addr = aligned_gpu_addr,
         .size = binding_size,
         .buffer_id = BufferId{},
+        .physical_size = physical_size,
     };
     return binding;
 }
