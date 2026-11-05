@@ -224,6 +224,9 @@ source and author in its message.
 - [DrSergioRFilho/Lichii](https://github.com/DrSergioRFilho/Lichii) (Dr. Sergio,
   with Claude Fable 5.1): check nested config array bounds against the innermost array, from
   [08d3388f0f5496be67dd5f83dfdcddd0fcd59358](https://github.com/DrSergioRFilho/Lichii/commit/08d3388f0f5496be67dd5f83dfdcddd0fcd59358).
+- [Shenopi/Lichii](https://github.com/Shenopi/Lichii) (999sian): preserve active custom settings
+  while reloading global configuration, adapted from the config-only changes in
+  [88ffd1f312f9a38fd45575dc8e1c7d66ef9b4f6e](https://github.com/Shenopi/Lichii/commit/88ffd1f312f9a38fd45575dc8e1c7d66ef9b4f6e).
 
 ## License
 
