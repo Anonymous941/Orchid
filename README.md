@@ -212,6 +212,9 @@ source and author in its message.
 - [chuppatricky/Lichii](https://github.com/chuppatricky/Lichii) (chuppatricky, with Claude Opus 5.5):
   shadow Ampere RED and SURED data registers, adapted from
   [fc5d6dc31b49ae614d06c05302f4ee2abdf8ce4c](https://github.com/chuppatricky/Lichii/commit/fc5d6dc31b49ae614d06c05302f4ee2abdf8ce4c).
+- [Hydro74000/Edlws](https://github.com/Hydro74000/Edlws) (Hydro74000): make `UniqueFunction`
+  own copies of lvalue callables while moving rvalues, from
+  [dd8039f6afc92803938d641a484312931acae9ca](https://github.com/Hydro74000/Edlws/commit/dd8039f6afc92803938d641a484312931acae9ca).
 
 ## License
 
