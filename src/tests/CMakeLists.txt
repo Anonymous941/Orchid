@@ -8,6 +8,7 @@ add_executable(tests
     common/bit_field.cpp
     common/cityhash.cpp
     common/container_hash.cpp
+    common/event.cpp
     common/fibers.cpp
     common/game_presets.cpp
     common/host_memory.cpp
@@ -74,6 +75,7 @@ add_executable(tests
     video_core/compute_storage_buffers.cpp
     video_core/cooperative_matrix.cpp
     video_core/texture_depth_float.cpp
+    video_core/texture_descriptor_bounds.cpp
     video_core/texture_r2ur_handle.cpp
     video_core/ampere_kirby.cpp
     video_core/ampere_geometry.cpp
