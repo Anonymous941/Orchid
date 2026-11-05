@@ -153,16 +153,33 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v5
 
+      # The package downloads sometimes crawl at 20-50 kB/s on a runner, from Azure's Ubuntu mirror
+      # and from archive.ubuntu.com alike (the first 0.7.2 run sat here for over 15 minutes, against
+      # 45 s normally), while the package lists come in fast. The .deb files (about 120 MB per
+      # architecture) therefore come from the Actions cache, and apt only downloads what changed.
+      - name: Cache apt packages
+        if: startsWith(matrix.platform, 'linux')
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/apt-debs
+          key: apt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/workflows/release-binaries.yml') }}
+          restore-keys: |
+            apt-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Install Linux dependencies
         if: startsWith(matrix.platform, 'linux')
         shell: bash
-        # The runner's Azure Ubuntu mirror sometimes crawls at 20-50 kB/s (the first 0.7.2 run sat
-        # here for over 15 minutes, against 45 s normally). Each attempt is timed out, and the
-        # retries switch to Ubuntu's own archive. Qt comes from install-qt-action (6.8.3), which
-        # CMake and linuxdeploy use, so Ubuntu's Qt 6.4 packages are not installed.
+        # Each attempt is timed out, and the retries switch to Ubuntu's own archive. Qt comes from
+        # install-qt-action (6.8.3), which CMake and linuxdeploy use, so Ubuntu's Qt 6.4 packages
+        # are not installed.
         timeout-minutes: 25
         run: |
           set -euo pipefail
+          debs="$RUNNER_TEMP/apt-debs"
+          mkdir -p "$debs"
+          if compgen -G "$debs/*.deb" > /dev/null; then
+            sudo cp "$debs"/*.deb /var/cache/apt/archives/
+          fi
           apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
           packages=(
             autoconf cmake g++ gcc git glslang-tools libglu1-mesa-dev
@@ -182,6 +199,9 @@ jobs:
             fi
             if sudo timeout 180 apt-get "${apt_opts[@]}" update &&
                sudo timeout 420 apt-get "${apt_opts[@]}" install -y --no-install-recommends "${packages[@]}"; then
+              # Keep exactly the packages of this install for the cache.
+              rm -f "$debs"/*.deb
+              cp /var/cache/apt/archives/*.deb "$debs"/
               exit 0
             fi
             echo "::warning::apt attempt $attempt failed or timed out"
@@ -300,7 +320,7 @@ jobs:
         shell: pwsh
         run: |
           $zip = Join-Path $env:RUNNER_TEMP 'sccache.zip'
-          Invoke-WebRequest -OutFile $zip https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-x86_64-pc-windows-msvc.zip
+          Invoke-WebRequest -MaximumRetryCount 5 -RetryIntervalSec 10 -OutFile $zip https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-x86_64-pc-windows-msvc.zip
           Expand-Archive $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'sccache')
           $bin = (Get-ChildItem -Recurse -Filter sccache.exe (Join-Path $env:RUNNER_TEMP 'sccache')).DirectoryName
           $bin | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
@@ -317,8 +337,28 @@ jobs:
 
       # Eden builds its Windows PGO binaries with MSYS2's clang toolchain, so we do the same. The
       # package list is docs/Deps.md (MSYS2) plus what the bundled FFmpeg needs to compile.
+      # repo.msys2.org answered one 0.7.2 test run with HTTP 504, so a failed setup gets one retry.
       - name: Set up MSYS2
+        id: msys2
         if: matrix.mingw
+        continue-on-error: true
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          cache: true
+          install: >-
+            git make autoconf libtool automake-wrapper patch jq pactoys ninja
+          pacboy: >-
+            toolchain:p clang:p lld:p cmake:p python-pip:p
+            qt6-base:p qt6-charts:p qt6-tools:p qt6-translations:p qt6-svg:p
+            openssl:p boost:p fmt:p lz4:p nlohmann-json:p zlib:p zstd:p libiconv:p
+            vulkan-memory-allocator:p vulkan-devel:p glslang:p enet:p opus:p
+            libusb:p unordered_dense:p jbigkit:p xz:p libdeflate:p bzip2:p
+            lerc:p graphite2:p libwebp:p libtiff:p brotli:p ccache:p
+
+      - name: Set up MSYS2 (retry)
+        if: matrix.mingw && steps.msys2.outcome == 'failure'
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
