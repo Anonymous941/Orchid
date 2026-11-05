@@ -218,6 +218,12 @@ source and author in its message.
 - [chuppatricky/Lichii](https://github.com/chuppatricky/Lichii) (chuppatricky, with Claude Opus 5.5):
   shadow Ampere RED and SURED data registers, adapted from
   [fc5d6dc31b49ae614d06c05302f4ee2abdf8ce4c](https://github.com/chuppatricky/Lichii/commit/fc5d6dc31b49ae614d06c05302f4ee2abdf8ce4c).
+- [SoyMoikas/Eglantine](https://github.com/SoyMoikas/Eglantine) (SoyMoikas): uniform-base
+  native Ampere local stores and loads, adapted to Orchid's existing vector lowering and register
+  shadowing from
+  [3c30f286d9631581ea3611c0f30eae46e7f60694](https://github.com/SoyMoikas/Eglantine/commit/3c30f286d9631581ea3611c0f30eae46e7f60694)
+  and
+  [8c06623a4651e5f31d7297932f6b9887dfea9006](https://github.com/SoyMoikas/Eglantine/commit/8c06623a4651e5f31d7297932f6b9887dfea9006).
 - [Hydro74000/Edlws](https://github.com/Hydro74000/Edlws) (Hydro74000): make `UniqueFunction`
   own copies of lvalue callables while moving rvalues, from
   [dd8039f6afc92803938d641a484312931acae9ca](https://github.com/Hydro74000/Edlws/commit/dd8039f6afc92803938d641a484312931acae9ca).

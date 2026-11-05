@@ -70,7 +70,11 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
         // RED's uniform-address form must reserve the UR mirrors even when no other op uses URs.
         const bool uniform_red = op == 0x98e && instruction.Bits(24, 8) == 255 &&
                                  (instruction.words[2] & ~0x03800e3fU) == 0x0c10e100;
-        uses_uniform_bank |= op == 0xd08 || op == 0xf66 || touches_uniform_bank(instruction) || uniform_red;
+        // Local loads/stores read URs but do not write them; keep this separate from the
+        // uniform-write provenance classification used by bindless textures below.
+        const bool uniform_local = (op == 0x983 || op == 0x987) && instruction.Bits(91, 1);
+        uses_uniform_bank |= op == 0xd08 || op == 0xf66 || touches_uniform_bank(instruction) ||
+                             uniform_red || uniform_local;
     }
     const auto address_of = [](u32 index) { return 0x50U + index * 8 + ((index + 1) / 3) * 8; };
     const auto fail = [&](u32 index, std::string_view reason) {
@@ -134,8 +138,8 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
         // instruction, see register_pressure.h) or rejected.
         bool requires_shadow = false;
         for (u32 bit : {16U, 24U, 32U, 64U}) {
-            // ISBEWR, RED and SURED also take data from bits 32-39, as RegisterPressure records.
-            if (bit == 32 && insn.Bits(9, 3) != 1 && opcode != 0xb60 && opcode != 0xb66 && opcode != 0xf60 && opcode != 0xf6c && opcode != 0x988 && opcode != 0xf66 && opcode != 0x927 && opcode != 0x98e && opcode != 0x59f) continue;
+            // Uniform-base STL, ISBEWR, RED and SURED also take data from bits 32-39, as RegisterPressure records.
+            if (bit == 32 && insn.Bits(9, 3) != 1 && opcode != 0xb60 && opcode != 0xb66 && opcode != 0xf60 && opcode != 0xf6c && opcode != 0x988 && opcode != 0x987 && opcode != 0xf66 && opcode != 0x927 && opcode != 0x98e && opcode != 0x59f) continue;
             const u32 reg = insn.Bits(bit, 8);
             if (reg >= (uses_uniform_bank ? 216U : 246U) && reg < 255) requires_shadow = true;
             else if (reg < 255) highest_source = std::max(highest_source, reg);
@@ -2910,9 +2914,9 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             // A uniform base (bit 91) is URb: STL.[URb+off] (0x987) takes it from bits 64-71, LDL.[URb+off]
             // (0x983) from bits 32-39.
             const bool store = opcode != 0x983;
-            const bool uniform_base = opcode == 0x987 || (opcode == 0x983 && insn.Bits(91, 1));
-            const u32 base_register = uniform_base ? uniform_register(insn.Bits(opcode == 0x987 ? 64 : 32, 8)) : 255U;
-            const u32 uniform_bits = opcode == 0x987 ? 0x080000ffU : (uniform_base ? 0x08000000U : 0U);
+            const bool uniform_base = opcode != 0x387 && insn.Bits(91, 1);
+            const u32 base_register = uniform_base ? uniform_register(insn.Bits(store ? 64 : 32, 8)) : 255U;
+            const u32 uniform_bits = uniform_base ? (store ? 0x080000ffU : 0x08000000U) : 0U;
             const u32 data = insn.Bits(32, 8), offset = insn.Bits(40, 24);
             const u32 type = insn.Bits(73, 3);
             // Types 0-3 (U8, S8, U16, S16) move one register's low byte or half, as on Maxwell.
@@ -2921,7 +2925,8 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             const u32 mode = insn.words[2] & ~((7U << 9) | uniform_bits);
             u32 value = store ? data : static_cast<u32>(dest);
             if (components == 0 || (store && insn.Bits(16, 8)) ||
-                (uniform_base && base_register == ~0U) ||
+                (opcode == 0x987 && !uniform_base) ||
+                (uniform_base && (base_register == ~0U || (insn.words[3] & 0xc00001ffU))) ||
                 (!store && ((data && !uniform_base) || value == 255)) || (offset & (alignment - 1)) ||
                 offset > 0x7fffff ||
                 (value != 255 && ((value & (components - 1)) ||
@@ -2930,9 +2935,9 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 return fail(index, "native local spill mode");
             u32 address = insn.Bits(24, 8);
             if (base_register != 255) {
-                // [Ra + URb + offset] (Kirby Air Riders' menu shaders): IADD the two.
-                emit(0x5c10000000000000ULL | predicate | 250 | (u64{address} << 8) | (u64{base_register} << 20));
-                address = 250;
+                // R248-R251 may hold a zero store vector; keep the combined address outside it.
+                emit(0x5c10000000000000ULL | predicate | 252 | (u64{address} << 8) | (u64{base_register} << 20));
+                address = 252;
             }
             if (value == 255) {
                 for (u32 word = 0; word < components; ++word) mov_imm(248 + word, 0);
