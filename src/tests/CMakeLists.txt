@@ -26,6 +26,7 @@ add_executable(tests
     common/zstd_compression.cpp
     core/core_timing.cpp
     core/address_space.cpp
+    core/address_arbiter_read.cpp
     core/page_heap.cpp
     core/read_traps.cpp
     core/nx2_readback_cache.cpp
