@@ -167,6 +167,8 @@ source and author in its message.
 - [Djihads80/Eglantine](https://github.com/Djihads80/Eglantine) and its contributors: merged
   regularly. Idle staging buffers freed (Takoroka), the RangeSet empty-query guard (néo Luigi),
   test fixes (kraibse).
+- [ZnOw01/Primrose](https://github.com/ZnOw01/Primrose) (ZnOw01): shader cache invalidation
+  lifetime fix, adapted to renderer-thread retirement.
 - [Selevet Eglantine](https://github.com/sylvieistaken/selevet-eglantine) (sylvieistaken): the
   windowed GPU mapping table diff, hot loop shortcuts, F2I, local spill and texture query lowering,
   device memory rebuild on layout changes, decoder end of stream, Windows commit retries, and the
