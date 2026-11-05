@@ -488,7 +488,8 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
       num_translation_threads{use_async_translation ? GetTotalTranslationWorkers() : 0},
       oot_visual_workaround{[] {
           const char* value = std::getenv("EDEN_NX2_OOT_VISUAL_WORKAROUND");
-          return value != nullptr && std::string_view{value} == "1";
+          // On by default for Ocarina of Time; EDEN_NX2_OOT_VISUAL_WORKAROUND=0 turns it off.
+          return value == nullptr || std::string_view{value} != "0";
       }()},
       workers(device.HasBrokenParallelShaderCompiling() ? 1ULL : GetTotalPipelineWorkers(),
               "VkPipelineBuilder", {}, Common::ThreadPlacement::Background),
