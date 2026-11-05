@@ -967,6 +967,14 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                      (u64{right_high ? high : mapped(low)} << 8) | (u64{insn.words[1]} << 20));
                 break;
             }
+            // USHF.R.U64 low word (bits 73-74 = 1, 76 .R, .W and .HI clear) of URb:URa by up to 32:
+            // Maxwell's U32-clamped SHF.R of the pair, as for SHF.R.U64 (Ocarina).
+            if (insn.words[2] == (0x08001200U | high_reg) && mapped(low) != ~0U && high != ~0U &&
+                dst != ~0U && native_predicate != 15 && insn.words[1] <= 32) {
+                emit(0x38f8000000000000ULL | predicate | dst | (u64{mapped(low)} << 8) |
+                     (u64{insn.words[1]} << 20) | (u64{high} << 39));
+                break;
+            }
             const bool high_result = insn.words[2] == (0x08010600U | high_reg) && low == 63 && high != ~0U;
             const bool low_result = insn.words[2] == 0x0800063f && mapped(low) != ~0U;
             if (dst == ~0U || native_predicate == 15 || insn.words[1] > 32 || (!high_result && !low_result))
@@ -1355,6 +1363,15 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 (insn.words[2] & ~(0x000118ffU | (opcode == 0xc19 ? 0x08000000U : 0U))) == 0x00000400U) {
                 emit(base(0x5c28000000000000ULL) | (u64{high} << 8) | (u64{shift} << 20) |
                      (u64{insn.Bits(75, 1)} << 39) | (u64{1} << 48));
+                break;
+            }
+            // SHF.R.U64 low word of Rc:Ra by a register (bits 73-74 = 1, .W and .HI clear): Maxwell
+            // SHF.R with the U64 clamp (Ocarina). ponytail: Maxwell clamps the count at 63, Ampere
+            // at 64, so a count of 64 or more leaves the top bit of Rc instead of 0; no dump needs it.
+            if (opcode == 0x219 && right && !high_result && insn.Bits(73, 2) == 1 && !insn.Bits(75, 1) &&
+                insn.words[1] <= 255 && low != 255 && high != 255 && (insn.words[2] & ~0xffU) == 0x1200U) {
+                emit(base(0x5cf8000000000000ULL) | (u64{low} << 8) | (u64{shift} << 20) |
+                     (u64{2} << 37) | (u64{high} << 39));
                 break;
             }
             if ((opcode != 0xa19 && insn.words[1] > 255) || insn.Bits(73, 2) != 3 || shift == ~0U ||
@@ -2304,7 +2321,7 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             // lowers these textures without checking URh+1). The pair is undefined at the entry
             // (uniform registers start unloaded), so a path without any write reads an undefined
             // handle on the console too and is not followed. BRA,
-            // BRX (any target) and the CALL.REL.NOINC loop exit (a jump over the next instruction)
+            // BRX (any later instruction) and the CALL.REL.NOINC loop exit (a jump over the next instruction)
             // are followed; calls, returns and unknown branch forms are refused. WARPSYNC, BSSY,
             // BSYNC and BREAK are no-ops in the lowering, so they never transfer control.
             const u32 size = static_cast<u32>(code.size());
@@ -2354,7 +2371,10 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 };
                 const auto leave = [&](u32 from) {
                     if (computed[from]) {
-                        for (u32 at = 0; at < size; ++at) reach(at);
+                        // ponytail: BRX targets come from a constant-buffer table the lowering cannot
+                        // read; taken as forward only (compiled switch tables, Ocarina's shaders;
+                        // Lichii accepts these without any check). Upgrade if a backward table shows up.
+                        for (u32 at = from + 1; at < size; ++at) reach(at);
                         return;
                     }
                     if (fallthrough[from]) reach(from + 1);
