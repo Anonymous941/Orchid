@@ -945,7 +945,8 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             if (target == ~0U || target == 255 || width > 5 ||
                 (opcode == 0xab9 && width < 4 && insn.Bits(38, 16) >= 0x8000) ||
                 (width == 5 && ((uniform_dest & 1) || uniform_register(uniform_dest + 1) != target + 1)) ||
-                bank() >= 18 || insn.Bits(38, 16) % align || insn.Bits(62, 2) ||
+                // Indexed loads align index + offset; the constant offset alone can be unaligned.
+                bank() >= 18 || (opcode == 0xab9 && insn.Bits(38, 16) % align) || insn.Bits(62, 2) ||
                 (insn.words[2] & ~0xe00U) != (opcode == 0xab9 ? 0U : 0x08000000U) ||
                 index_target == ~0U)
                 return fail(index, "native uniform constant load mode");
