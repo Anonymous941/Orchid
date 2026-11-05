@@ -30,8 +30,12 @@ TEST_CASE("Event extreme timeout waits for and consumes a signal", "[common][eve
 TEST_CASE("Event nonpositive timeout still consumes an existing signal", "[common][event]") {
     Common::Event event;
     CHECK_FALSE(event.WaitFor(std::chrono::nanoseconds::min()));
+    CHECK_FALSE(event.WaitFor(std::chrono::nanoseconds::zero()));
     event.Set();
     CHECK(event.WaitFor(std::chrono::nanoseconds::min()));
+    CHECK_FALSE(event.IsSet());
+    event.Set();
+    CHECK(event.WaitFor(std::chrono::nanoseconds::zero()));
     CHECK_FALSE(event.IsSet());
 }
 
