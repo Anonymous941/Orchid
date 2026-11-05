@@ -540,8 +540,7 @@ void BufferCache<P>::UnbindGraphicsStorageBuffers(size_t stage) {
 
 template <class P>
 bool BufferCache<P>::BindGraphicsStorageBuffer(size_t stage, size_t ssbo_index, u32 cbuf_index,
-                                               u32 cbuf_offset, bool is_written,
-                                               u32 indirect_offset) {
+                                               u32 cbuf_offset, bool is_written) {
     const bool already_enabled =
         ((channel_state->enabled_storage_buffers[stage] >> ssbo_index) & 1U) != 0;
     if constexpr (requires { runtime.ShouldLimitDynamicStorageBuffers(); }) {
@@ -564,18 +563,9 @@ bool BufferCache<P>::BindGraphicsStorageBuffer(size_t stage, size_t ssbo_index, 
     }
 
     const auto& cbufs = maxwell3d->state.shader_stages[stage];
-    GPUVAddr ssbo_addr = cbufs.const_buffers[cbuf_index].address + cbuf_offset;
-    if (indirect_offset != ~0U) {
-        // The pointer is an entry of a table the constant buffer points to.
-        const GPUVAddr holder = gpu_memory->Read<u64>(ssbo_addr);
-        if (holder == 0) {
-            channel_state->storage_buffers[stage][ssbo_index] = NULL_BINDING;
-            return false;
-        }
-        ssbo_addr = holder + indirect_offset;
-    }
+    const GPUVAddr ssbo_addr = cbufs.const_buffers[cbuf_index].address + cbuf_offset;
     channel_state->storage_buffers[stage][ssbo_index] =
-        StorageBufferBinding(ssbo_addr, cbuf_index, is_written, indirect_offset != ~0U);
+        StorageBufferBinding(ssbo_addr, cbuf_index, is_written);
     return (channel_state->storage_buffers[stage][ssbo_index].buffer_id != NULL_BUFFER_ID);
 }
 
@@ -614,7 +604,7 @@ void BufferCache<P>::UnbindComputeStorageBuffers() {
 
 template <class P>
 void BufferCache<P>::BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index, u32 cbuf_offset,
-                                              bool is_written, u32 indirect_offset) {
+                                              bool is_written) {
     if (ssbo_index >= channel_state->compute_storage_buffers.size()) [[unlikely]] {
         LOG_ERROR(HW_GPU, "Storage buffer index {} exceeds maximum storage buffer count",
                   ssbo_index);
@@ -649,18 +639,9 @@ void BufferCache<P>::BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index,
     ASSERT(((launch_desc.const_buffer_enable_mask >> cbuf_index) & 1) != 0);
 
     const auto& cbufs = launch_desc.const_buffer_config;
-    GPUVAddr ssbo_addr = cbufs[cbuf_index].Address() + cbuf_offset;
-    if (indirect_offset != ~0U) {
-        // The pointer is an entry of a table the constant buffer points to.
-        const GPUVAddr holder = gpu_memory->Read<u64>(ssbo_addr);
-        if (holder == 0) {
-            channel_state->compute_storage_buffers[ssbo_index] = NULL_BINDING;
-            return;
-        }
-        ssbo_addr = holder + indirect_offset;
-    }
+    const GPUVAddr ssbo_addr = cbufs[cbuf_index].Address() + cbuf_offset;
     channel_state->compute_storage_buffers[ssbo_index] =
-        StorageBufferBinding(ssbo_addr, cbuf_index, is_written, indirect_offset != ~0U,
+        StorageBufferBinding(ssbo_addr, cbuf_index, is_written,
                              kepler_compute->IsNativeMode());
 }
 
@@ -2726,8 +2707,7 @@ void BufferCache<P>::DeleteBuffer(BufferId buffer_id, bool do_not_mark) {
 
 template <class P>
 Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
-                                             bool is_written, bool table_pointer,
-                                             bool native_compute) const {
+                                             bool is_written, bool native_compute) const {
     const GPUVAddr gpu_addr = gpu_memory->Read<u64>(ssbo_addr);
 
     if (gpu_addr == 0) {
@@ -2738,22 +2718,11 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
         const u64 layout_size = gpu_memory->GetMemoryLayoutSize(gpu_addr);
         // Keep the existing NVN/graphics behaviour; bare pointers must be capped before
         // conversion, since a kind range can be 4 GiB or larger.
-        const u64 memory_layout_size = table_pointer || native_compute
-                                           ? layout_size
-                                           : static_cast<u32>(layout_size);
-        // A pointer read from a table in memory is the base of an object pool, read anywhere in
-        // it (Ocarina of Time's grass instances lie 12-18 MiB past theirs): bound to the end of
-        // its mapping, up to 64 MiB, and no further than one continuous range. The next qword is
-        // the next table entry, not a size. Written pools keep the 8 MiB cap: a write marks the
-        // whole binding GPU-modified.
-        // Native compute pointers are bare too; the next word is another shader parameter.
-        const u64 next_qword =
-            table_pointer || native_compute ? 0 : gpu_memory->Read<u64>(ssbo_addr + 8);
-        const u32 limit = StorageBufferSizeLimit(memory_layout_size, next_qword, table_pointer,
-                                                native_compute, is_written);
-        if (table_pointer && limit != 0) {
-            return static_cast<u32>(gpu_memory->MaxContinuousRange(gpu_addr, limit));
-        }
+        const u64 memory_layout_size =
+            native_compute ? layout_size : static_cast<u32>(layout_size);
+        // Native compute pointers are bare; the next word is another shader parameter.
+        const u64 next_qword = native_compute ? 0 : gpu_memory->Read<u64>(ssbo_addr + 8);
+        const u32 limit = StorageBufferSizeLimit(memory_layout_size, next_qword, native_compute);
         if (native_compute && limit != 0) {
             const auto ranges = gpu_memory->GetSubmappedRange(gpu_addr, limit);
             return StorageBufferMappedPrefix(gpu_addr, limit, ranges);
@@ -2780,15 +2749,15 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
     const DAddr cpu_end = Common::AlignUp(*device_addr + size, Core::DEVICE_PAGESIZE);
 
     u32 binding_size = static_cast<u32>(cpu_end - *aligned_device_addr);
-    if (is_written || (native_compute && !table_pointer)) {
+    if (is_written || native_compute) {
         binding_size = aligned_size;
     }
     // Keep a safe fallback if multi-range storage cannot be used (including non-sparse writes).
     // Starting from the aligned address also checks that the alignment prefix is contiguous.
-    const u32 physical_size = native_compute && !table_pointer
+    const u32 physical_size = native_compute
         ? static_cast<u32>(gpu_memory->MaxContinuousRange(aligned_gpu_addr, binding_size))
         : 0;
-    if (native_compute && !table_pointer && physical_size <= gpu_addr - aligned_gpu_addr) {
+    if (native_compute && physical_size <= gpu_addr - aligned_gpu_addr) {
         return NULL_BINDING;
     }
     const Binding binding{

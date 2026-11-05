@@ -50,12 +50,6 @@ static u64 MakeCbufKey(u32 index, u32 offset) {
     return (static_cast<u64>(index) << 32) | offset;
 }
 
-// Pointer-table entries share the classification map with plain constant buffer pointers.
-static u64 MakeIndirectCbufKey(u32 index, u32 offset, u32 indirect) {
-    return (u64{1} << 63) | (static_cast<u64>(indirect & 0x3fffff) << 40) |
-           MakeCbufKey(index, offset);
-}
-
 static Shader::TextureType ConvertTextureType(const Tegra::Texture::TICEntry& entry) {
     switch (entry.texture_type) {
     case Tegra::Texture::TextureType::Texture1D:
@@ -202,25 +196,6 @@ bool GenericEnvironment::IsCbufStorageBufferPointer(u32 index, u32 offset) {
                         (u64{ReadCbufValue(index, offset + 4)} << 32);
     const bool mapped = address != 0 && gpu_memory->IsWithinGPUAddressRange(address) &&
                         gpu_memory->IsFullyMappedRange(address, 1);
-    storage_pointer_types.emplace(key, static_cast<u8>(mapped));
-    return mapped;
-}
-
-bool GenericEnvironment::IsCbufIndirectStorageBufferPointer(u32 index, u32 offset, u32 indirect) {
-    const u64 key = MakeIndirectCbufKey(index, offset, indirect);
-    if (const auto it = storage_pointer_types.find(key); it != storage_pointer_types.end()) {
-        return it->second != 0;
-    }
-    bool mapped = false;
-    if (IsCbufStorageBufferPointer(index, offset)) {
-        const u64 holder =
-            u64{ReadCbufValue(index, offset)} | (u64{ReadCbufValue(index, offset + 4)} << 32);
-        if (gpu_memory->IsFullyMappedRange(holder + indirect, sizeof(u64))) {
-            const u64 address = gpu_memory->Read<u64>(holder + indirect);
-            mapped = address != 0 && gpu_memory->IsWithinGPUAddressRange(address) &&
-                     gpu_memory->IsFullyMappedRange(address, 1);
-        }
-    }
     storage_pointer_types.emplace(key, static_cast<u8>(mapped));
     return mapped;
 }
@@ -503,7 +478,7 @@ std::shared_ptr<const LoweredNativeCode> GenericEnvironment::LowerNativeCode(u32
     auto lowered = Shader::Ampere::LowerToMaxwell(native, stage == Shader::Stage::Geometry,
                                                   support_cooperative_matrix &&
                                                       stage == Shader::Stage::Compute,
-                                                  tessellation, /*compact_matrix=*/true);
+                                                  tessellation);
     // Upstream's lowering covers forms for games without dumps here; it does not know Orchid's
     // geometry and tessellation stage rules, so those programs stay with ours.
     if (!lowered && stage != Shader::Stage::Geometry &&
@@ -1107,14 +1082,6 @@ bool FileEnvironment::IsCbufStorageBufferPointer(u32 index, u32 offset) {
     const auto it = storage_pointer_types.find(MakeCbufKey(index, offset));
     if (it == storage_pointer_types.end()) {
         throw Shader::LogicError("Uncached storage pointer classification");
-    }
-    return it->second != 0;
-}
-
-bool FileEnvironment::IsCbufIndirectStorageBufferPointer(u32 index, u32 offset, u32 indirect) {
-    const auto it = storage_pointer_types.find(MakeIndirectCbufKey(index, offset, indirect));
-    if (it == storage_pointer_types.end()) {
-        throw Shader::LogicError("Uncached storage pointer table classification");
     }
     return it->second != 0;
 }
