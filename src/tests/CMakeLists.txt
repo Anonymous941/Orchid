@@ -42,6 +42,7 @@ add_executable(tests
     core/vfs_vector.cpp
     core/internal_network/network.cpp
     video_core/aftermath_dump.cpp
+    video_core/stall_diagnostics.cpp
     video_core/oot_visual_workaround.cpp
     video_core/storage_buffer_pointer_tracking.cpp
     video_core/storage_buffer_control_flow.cpp
@@ -115,6 +116,16 @@ target_link_libraries(tests PRIVATE common core input_common video_core)
 target_link_libraries(tests PRIVATE ${PLATFORM_LIBRARIES} Catch2::Catch2WithMain Threads::Threads)
 
 add_test(NAME tests COMMAND tests)
+
+# Separate processes exercise the cached opt-in and destruction order without a GPU or profile.
+add_executable(stall_diagnostics_session
+    video_core/stall_diagnostics_session.cpp
+    ../video_core/stall_diagnostics.cpp)
+target_link_libraries(stall_diagnostics_session PRIVATE common ${PLATFORM_LIBRARIES} Threads::Threads)
+add_test(NAME stall_diagnostics_disabled COMMAND ${CMAKE_COMMAND} -E env
+    --unset=EDEN_NX2_STALL_DIAGNOSTICS $<TARGET_FILE:stall_diagnostics_session> disabled)
+add_test(NAME stall_diagnostics_enabled COMMAND ${CMAKE_COMMAND} -E env
+    EDEN_NX2_STALL_DIAGNOSTICS=1 $<TARGET_FILE:stall_diagnostics_session> enabled)
 
 # needed for vma
 if (NOT MSVC)

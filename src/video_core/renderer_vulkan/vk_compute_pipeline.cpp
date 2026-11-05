@@ -10,7 +10,10 @@
 #include <boost/container/small_vector.hpp>
 #include <fmt/format.h>
 
+#include "common/logging.h"
+#include "common/settings.h"
 #include "shader_recompiler/exception.h"
+#include "video_core/gpu_logging/gpu_logging.h"
 #include "video_core/renderer_vulkan/pipeline_helper.h"
 #include "video_core/renderer_vulkan/pipeline_statistics.h"
 #include "video_core/renderer_vulkan/vk_buffer_cache.h"
@@ -21,11 +24,9 @@
 #include "video_core/renderer_vulkan/vk_update_descriptor.h"
 #include "video_core/shader_handle_program.h"
 #include "video_core/shader_notify.h"
+#include "video_core/stall_diagnostics.h"
 #include "video_core/vulkan_common/vulkan_device.h"
 #include "video_core/vulkan_common/vulkan_wrapper.h"
-#include "video_core/gpu_logging/gpu_logging.h"
-#include "common/logging.h"
-#include "common/settings.h"
 
 namespace Vulkan {
 
@@ -128,6 +129,9 @@ ComputePipeline::ComputePipeline(const Device& device_, Scheduler& scheduler, vk
             .basePipelineIndex = 0,
         };
         try {
+            VideoCommon::StallDiagnostics::Scope diagnostic{
+                {VideoCommon::StallDiagnostics::Phase::ComputeCreate, "compute-build",
+                 shader_hash}};
             pipeline = device.GetLogical().CreateComputePipeline(compute_ci, *pipeline_cache);
         } catch (const vk::Exception& exception) {
             LOG_CRITICAL(Render_Vulkan, "Adreno rejected compute shader {:016X}: {}", shader_hash,
@@ -294,6 +298,9 @@ bool ComputePipeline::Configure(Tegra::Engines::KeplerCompute& kepler_compute,
     if (!is_built.load(std::memory_order::relaxed)) {
         // Wait for the pipeline to be built
         scheduler.Record([this](vk::CommandBuffer) {
+            VideoCommon::StallDiagnostics::Scope diagnostic{
+                {VideoCommon::StallDiagnostics::Phase::PipelineBuildWait, "scheduler-worker",
+                 shader_hash}};
             std::unique_lock lock{build_mutex};
             build_condvar.wait(lock, [this] { return is_built.load(std::memory_order::relaxed); });
         });

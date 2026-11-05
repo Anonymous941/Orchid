@@ -14,6 +14,7 @@
 #include <fmt/format.h>
 
 #include "video_core/renderer_vulkan/vk_query_cache.h"
+#include "video_core/stall_diagnostics.h"
 
 #include "common/settings.h"
 #include "common/thread.h"
@@ -85,11 +86,16 @@ void Scheduler::WaitWorker() {
 
     // Ensure the queue is drained.
     {
+        VideoCommon::StallDiagnostics::Scope diagnostic{
+            {VideoCommon::StallDiagnostics::Phase::SchedulerQueueDrain, "scheduler-drain-caller"}};
         std::unique_lock ql{queue_mutex};
         event_cv.wait(ql, [this] { return work_queue.empty(); });
     }
 
     // Now wait for execution to finish.
+    VideoCommon::StallDiagnostics::Scope diagnostic{
+        {VideoCommon::StallDiagnostics::Phase::SchedulerExecutionAcquire,
+         "scheduler-drain-caller"}};
     std::scoped_lock el{execution_mutex};
 }
 
@@ -351,7 +357,11 @@ void Scheduler::WorkerThread(std::stop_token stop_token) {
             // Perform the work, tracking whether the chunk was a submission
             // before executing.
             const bool has_submit = work->HasSubmit();
-            work->ExecuteAll(current_cmdbuf, current_upload_cmdbuf);
+            {
+                VideoCommon::StallDiagnostics::Scope diagnostic{
+                    {VideoCommon::StallDiagnostics::Phase::SchedulerChunk, "scheduler-worker"}};
+                work->ExecuteAll(current_cmdbuf, current_upload_cmdbuf);
+            }
 
             // If the chunk was a submission, reallocate the command buffer.
             if (has_submit) {
@@ -406,7 +416,13 @@ u64 Scheduler::SubmitExecution(VkSemaphore signal_semaphore, VkSemaphore wait_se
             on_submit();
         }
 
-        std::scoped_lock lock{submit_mutex};
+        std::unique_lock lock{submit_mutex, std::defer_lock};
+        {
+            VideoCommon::StallDiagnostics::Scope diagnostic{
+                {VideoCommon::StallDiagnostics::Phase::SubmitLockAcquire, "scheduler-worker", 0, 0,
+                 -1, signal_value}};
+            lock.lock();
+        }
         VideoCommon::ReadbackDiagnostics::Scope diagnostic{
             VideoCommon::ReadbackDiagnostics::Event::Submit};
         switch (const VkResult result = master_semaphore->SubmitQueue(

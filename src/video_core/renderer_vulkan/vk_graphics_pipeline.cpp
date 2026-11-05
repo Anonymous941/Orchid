@@ -14,6 +14,7 @@
 #include <fmt/format.h>
 
 #include "video_core/renderer_vulkan/pipeline_helper.h"
+#include "video_core/stall_diagnostics.h"
 
 #include "common/bit_field.h"
 #include "video_core/renderer_vulkan/maxwell_to_vk.h"
@@ -669,6 +670,9 @@ bool GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,
     if (!is_built.load(std::memory_order::relaxed)) {
         // Wait for the pipeline to be built
         scheduler.Record([this](vk::CommandBuffer) {
+            VideoCommon::StallDiagnostics::Scope diagnostic{
+                {VideoCommon::StallDiagnostics::Phase::PipelineBuildWait, "scheduler-worker",
+                 key.Hash()}};
             std::unique_lock lock{build_mutex};
             build_condvar.wait(lock, [this] { return is_built.load(std::memory_order::relaxed); });
         });
@@ -1170,27 +1174,33 @@ void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
         flags |= VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
     }
 
-    pipeline = device.GetLogical().CreateGraphicsPipeline({
-        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = flags,
-        .stageCount = static_cast<u32>(shader_stages.size()),
-        .pStages = shader_stages.data(),
-        .pVertexInputState = is_mesh ? nullptr : &vertex_input_ci,
-        .pInputAssemblyState = is_mesh ? nullptr : &input_assembly_ci,
-        .pTessellationState = is_mesh ? nullptr : &tessellation_ci,
-        .pViewportState = &viewport_ci,
-        .pRasterizationState = &rasterization_ci,
-        .pMultisampleState = &multisample_ci,
-        .pDepthStencilState = &depth_stencil_ci,
-        .pColorBlendState = &color_blend_ci,
-        .pDynamicState = &dynamic_state_ci,
-        .layout = *pipeline_layout,
-        .renderPass = render_pass,
-        .subpass = 0,
-        .basePipelineHandle = nullptr,
-        .basePipelineIndex = 0,
-    }, *pipeline_cache);
+    {
+        VideoCommon::StallDiagnostics::Scope diagnostic{
+            {VideoCommon::StallDiagnostics::Phase::GraphicsCreate, "graphics-build", key.Hash()}};
+        pipeline = device.GetLogical().CreateGraphicsPipeline(
+            {
+                .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+                .pNext = nullptr,
+                .flags = flags,
+                .stageCount = static_cast<u32>(shader_stages.size()),
+                .pStages = shader_stages.data(),
+                .pVertexInputState = is_mesh ? nullptr : &vertex_input_ci,
+                .pInputAssemblyState = is_mesh ? nullptr : &input_assembly_ci,
+                .pTessellationState = is_mesh ? nullptr : &tessellation_ci,
+                .pViewportState = &viewport_ci,
+                .pRasterizationState = &rasterization_ci,
+                .pMultisampleState = &multisample_ci,
+                .pDepthStencilState = &depth_stencil_ci,
+                .pColorBlendState = &color_blend_ci,
+                .pDynamicState = &dynamic_state_ci,
+                .layout = *pipeline_layout,
+                .renderPass = render_pass,
+                .subpass = 0,
+                .basePipelineHandle = nullptr,
+                .basePipelineIndex = 0,
+            },
+            *pipeline_cache);
+    }
 
     // Log graphics pipeline creation
     if (GPU::Logging::IsActive()) {
