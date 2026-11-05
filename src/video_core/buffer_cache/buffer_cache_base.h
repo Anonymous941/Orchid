@@ -7,14 +7,15 @@
 #pragma once
 
 #include <algorithm>
-#include <cstdlib>
 #include <array>
 #include <bit>
+#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <numeric>
 #include <optional>
+#include <source_location>
 #include <span>
 #include <unordered_map>
 #include <unordered_set>
@@ -581,7 +582,8 @@ private:
 
     void RefreshMultiRangeSegments(std::vector<MultiRangeSegment>& pool);
 
-    bool SynchronizeBuffer(Buffer& buffer, DAddr device_addr, u32 size);
+    bool SynchronizeBuffer(Buffer& buffer, DAddr device_addr, u32 size,
+                           std::source_location caller = std::source_location::current());
     bool SynchronizeBufferPages(Buffer& buffer, DAddr device_addr, u32 size);
 
     void UploadMemory(Buffer& buffer, u64 total_size_bytes, u64 largest_copy,
