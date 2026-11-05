@@ -144,10 +144,8 @@ f314dc672 zortos293/Eglantine: shader-sweep cache format flag, tooling Orchid do
 5ad6c8501 anthonyloukinas/Lichii: same 256-slot query truncation as 015f76283
 47e1e9520 Kajcsi/Lichii: same 256-slot query truncation as 015f76283
 2aecf0e5a favoritul/Lichii: same 256-slot query truncation as 015f76283
-27226d256 zortos293/Eglantine: clear-overwritten guest upload is being ported to Orchid
 1122ab239 zortos293/Eglantine: clear-overwritten upload component included in port of 27226d256
 ebf388f07 zortos293/Eglantine: clear-overwritten upload follow-up included in port of 27226d256
-a6e5217c7 zortos293/Eglantine: 32-bit global ATOM.CAS is being ported to Orchid
 3e94f7fdc Vortex727/eglantine-zortos293: duplicate of global ATOM.CAS ported from a6e5217c7
 b7306e210 Vortex727/eglantine-zortos293: runtime routing/R254 follow-up adapted in Orchid's CAS port; keep Orchid's existing unmapped fallback
 7e1d64555 zortos293/Eglantine: gather mutex is inapplicable; Orchid FlushRegion does not use the invalidating gather path and no concurrent Gather caller was found; unrelated CLI restart
@@ -228,7 +226,7 @@ cc09e727a DrSergioRFilho/Lichii: opt-in pipeline-key refresh optimization needs 
 d0aeffe0f DrSergioRFilho/Lichii: coarse host sleeps change timing and are opt-in
 d7dffbd85 DrSergioRFilho/Lichii: opt-in split-ring batching changes synchronization
 e56b37fc0 DrSergioRFilho/Lichii: GEQUAL split-drain bypass is a timing optimization
- e691cc3f2 DrSergioRFilho/Lichii: broad split synchronization/performance rewrite needs a separate correctness review
+e691cc3f2 DrSergioRFilho/Lichii: broad split synchronization/performance rewrite needs a separate correctness review
 424b58a7e JoranF/Lichii: CI-only MinGW PGO dependency change
 ac5db9343 JoranF/Lichii: RegisterAction already rechecks under Orchid's shared lock; decoder has no received_any fallback state
 d2ad83095 Shenopi/Lichii: fork-specific Windows CI selection
@@ -251,15 +249,13 @@ b59990bd4 Deidakom/Peachy: writer-wait bypass is a synchronization optimization,
 c50cd0a9b Deidakom/Peachy: scheduler-owner guard depends on a keep-page WriteMemory API Orchid does not have
 ded6a1751 Deidakom/Peachy: opt-in Windows sampling profiler feature
 ec4cd586b Deidakom/Peachy: duplicate macro-DMA split-drain optimization
- d1d218717 tiagocarmosantos/Lichii: opt-in zero-count task/mesh draw diagnostics
+d1d218717 tiagocarmosantos/Lichii: opt-in zero-count task/mesh draw diagnostics
 09fe67c66 Kipchun/Lichii-GUI: Switch-style home screen is a UI feature
 56997fb8d Kipchun/Lichii-GUI: application appearance and settings UI features
 cec41ffda blazn56ace/Lichii: Windows runner generator selection only
-201450e90 leadaenima/Lichii: AMDVLK dynamic-shuffle follow-up is being evaluated separately with its paired 957913cf fix
-957913cf1 leadaenima/Lichii: AMDVLK dynamic subgroup workaround is being evaluated separately with follow-up 201450e90
 fdbf03042 leadaenima/Lichii: rejected-hash shader diagnostics, not a product fix
 f9221d518 huseinalsharra14-sketch/Lichii2: game-specific upscale stand-in constant-buffer size
- a2b5c3f7e peop8d/LichiibeebsNX2: frame-trace diagnostics only
+a2b5c3f7e peop8d/LichiibeebsNX2: frame-trace diagnostics only
 c63fe2db9 peop8d/LichiibeebsNX2: profile data update only
 0ed2db63a trianglebraindev/Lichii: experimental unresolved-shadow fallback changes rendering
 1ba9a3a89 trianglebraindev/Lichii: runtime log-filter option only
@@ -269,7 +265,6 @@ c63fe2db9 peop8d/LichiibeebsNX2: profile data update only
 77e575cf5 trianglebraindev/Lichii: query-DMA trace diagnostics only
 84e9b54ef trianglebraindev/Lichii: profile-led MaxContinuousRange cache requires separate invalidation review
 9ff99f6db trianglebraindev/Lichii: Switch 2 idle-spin timing policy is platform-specific
-ac82c78b5 trianglebraindev/Lichii: two-source F2IP fix is being ported separately
 ad5930c10 trianglebraindev/Lichii: CI-only Windows build selection
 b489b15c2 trianglebraindev/Lichii: explicitly experimental query-DMA synchronization mode
 c4a169691 trianglebraindev/Lichii: shader-hash update diagnostics only
@@ -300,10 +295,8 @@ df2ab4040 Jav1B/Lichii: duplicate deferred fence submission; API is absent from 
 a62364d8 JayceeB1/Eglantine: title-specific GPU clock scaling under Boost/Overclock changes timing
 ad3a31b27 JayceeB1/Eglantine: FSR3 frame interpolation feature
 3416a7837 msxdan/Eglantine: bubblewrap launcher and gamepad/audio integration are new platform features
-3c30f286d SoyMoikas/Eglantine: uniform-base STL support is being evaluated with its LDL follow-up
-8c06623a4 SoyMoikas/Eglantine: uniform-base LDL support is being evaluated with its STL prerequisite
 bd46da522 hedigrrr1/Hedfix: ISETP test comparison only
-d18652914 hedigrrr1/Hedfix: F2IP is handled separately and UIADD3 carry is already supported by Orchid
+d18652914 hedigrrr1/Hedfix: duplicate of F2IP port from trianglebraindev/Lichii ac82c78b5; UIADD3 carry already supported
 de8420116 hedigrrr1/Hedfix: game-specific IMAD pointer and Ocarina movie-input changes
 0e359430f daniel-lynch/Lichii: task/mesh program pointer binding is platform-specific feature work
 23bb52c71 daniel-lynch/Lichii: cherry-pick notes only
@@ -315,7 +308,6 @@ e4d345000 daniel-lynch/Lichii: duplicate of NUP LayeredFS fix ported from DrSerg
 e7651b599 daniel-lynch/Lichii: fork-specific uniform-buffer upload performance switch
 fae98ec51 daniel-lynch/Lichii: Ocarina-specific debug script defaults
 4498443f1 computererguy/Lichii: Android game-folder scan feature
-a2b5c3f7e peop8d/LichiibeebsNX2: profile update only
 6652f9c36 computererguy/Lichii: Android NUP game discovery feature
 6708ea78f computererguy/Lichii: measured GPU acquire/drain performance shortcut needs sync review
 853b0e893 computererguy/Lichii: Android log-sharing and game-folder diagnostics
