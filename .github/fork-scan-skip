@@ -189,7 +189,7 @@ edaf83169 sexyboomer888-gif/Lichii: helper flush for deferred submissions, inapp
 459b53ed3 Drizz1le/Lichii: clear-overwritten guest upload already ported from zortos293/Eglantine 27226d256
 dafcd6c78 Drizz1le/Lichii: clear-overwritten upload IsFullClear follow-up already ported from zortos293/Eglantine 27226d256
 1123229ba sexyboomer888-gif/Lichii: duplicate of clear-overwritten guest upload ported from zortos293/Eglantine 27226d256
-ae7037b65 Shenopi/Lichii: RED/SURED data-register shadowing is being ported from chuppatricky/Lichii fc5d6dc31
+ae7037b65 Shenopi/Lichii: duplicate RED/SURED register-shadowing fix already ported from chuppatricky/Lichii fc5d6dc31
 2416d0968 Drizz1le/Lichii: duplicate RED/SURED data-register shadowing ported from chuppatricky/Lichii fc5d6dc31
 40631acb6 Jav1B/Lichii: duplicate RED/SURED data-register shadowing ported from chuppatricky/Lichii fc5d6dc31
 fe6a388a4 zortos293/Eglantine: draw-only guard leaves transform-feedback/query counter lifecycle commands unpaired after a failed bind; safe adaptation needs coordinated state handling
@@ -315,3 +315,23 @@ fae98ec51 daniel-lynch/Lichii: Ocarina-specific debug script defaults
 072d8b47a soooldierboooy/Lichii: contributor work notes only
 48fe39ad5 soooldierboooy/Lichii: performance-work notes only
 c6b551165 soooldierboooy/Lichii: CI-only Windows manual-build option
+0677e1bca Dimiduh/Peachy: release workflow update only
+2d40fd9fc rdodoa/Eglantine: texture-header traces and video-frame dumps are diagnostics
+2dad83095 Shenopi/Lichii: fork-specific Windows CI selection
+45ad41563 daniel-lynch/Lichii: duplicate NUP LayeredFS fix ported from DrSergioRFilho/Lichii fe29f5c45
+4b7e75858 vouion/Lichii: video scaler test pixel-range adjustment only
+5ac536346 mohsinous/NS2: release workflow update only
+67bf34c8e Quixomatic/Eglantine: Ocarina-specific performance bundle
+6c5023447 Deidakom/Peachy: project logo/branding only
+71df3417c dxpn00-lang/Lichii: release workflow update only
+72e97786f sexyboomer888-gif/Lichii: Ocarina diagnostic state declaration
+80a144844 vouion/Lichii: clang-cl portability fixes require separate Windows build validation
+8dea47dff yuri2301/Eglantine: reverses macro-DMA performance change and adjusts fork diagnostics
+914ea92f1 Deidakom/Peachy: app rebrand only
+95b437098 yuri2301/Eglantine: profile-led descriptor-buffer setting change
+bc6aeecb1 Hydro74000/Edlws: fork-specific generated-UI ignore and policy files
+c6cf43efe Alleexxi/Eglantine: new platform font-service feature
+c940c0929 Dimiduh/Lichii: release workflow update only
+d06ea45b0 vouion/Lichii: sysmix counters and clock logs are diagnostics; audio behavior is unchanged
+d4e0bcf18 Deidakom/Peachy: README rebrand only
+e0d911b28 Hydro74000/Edlws: logo replacement only
