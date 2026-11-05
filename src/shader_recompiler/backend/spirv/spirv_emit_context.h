@@ -368,7 +368,9 @@ public:
     Id write_global_func_u32{};
     Id write_global_func_u32x2{};
     Id write_global_func_u32x4{};
-    Id atomic_iadd_global_func_u32{};
+    // Global 32-bit atomics routed through the storage buffers, (address, value) -> old value.
+    // Indexed like the operations table in DefineGlobalMemoryFunctions.
+    std::array<Id, 9> atomic_global_func_u32{};
 
     bool need_input_position_indirect{};
     Id input_position{};
