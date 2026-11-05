@@ -195,3 +195,5 @@ ae7037b65 Shenopi/Lichii: RED/SURED data-register shadowing is being ported from
 2416d0968 Drizz1le/Lichii: duplicate RED/SURED data-register shadowing ported from chuppatricky/Lichii fc5d6dc31
 40631acb6 Jav1B/Lichii: duplicate RED/SURED data-register shadowing ported from chuppatricky/Lichii fc5d6dc31
 fe6a388a4 zortos293/Eglantine: draw-only guard leaves transform-feedback/query counter lifecycle commands unpaired after a failed bind; safe adaptation needs coordinated state handling
+729128674c17dfeaac0c89eeae76e85762253903 rdodoa/Eglantine: TIC trace-key narrowing affects a diagnostic path Orchid does not have
+170b078205956ebe584fd4738153a274b59b533d janvitos/Lichii: Orchid already fails NSO loads on decompression errors and checks the exact decoded segment size
