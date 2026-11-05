@@ -29,7 +29,7 @@ TEST_CASE("Ampere reciprocal accepts the captured uniform source form", "[video_
     const auto predicated = LowerToMaxwell(code);
     REQUIRE(static_cast<bool>(predicated));
     REQUIRE(((predicated.instructions.front() >> 16) & 15) == 1);
-    for (const u32 source : {64U, 0x80000008U}) { // UR28-UR62 map to R180-R214
+    for (const u32 source : {64U, 0x00000108U}) { // UR64 does not exist; bit 40 is unknown
         auto invalid = code;
         invalid[0].words[1] = source;
         REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(invalid)));

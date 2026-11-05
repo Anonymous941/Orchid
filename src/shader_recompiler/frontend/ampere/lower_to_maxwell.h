@@ -1554,6 +1554,14 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 : geometry_stage || tessellation_stage;
             if ((special == 17 || special == 29) && !identity_stage)
                 return fail(index, "native geometry identity outside geometry stage");
+            if (special == 132 && !insn.words[1] && insn.words[2] == (special << 8)) {
+                // SR_VARIABLE_RATE: without variable-rate shading every fragment is 1x1, its width
+                // and height in bytes 1 and 2 (ported from zortos293's Lichii 6a96ec2cd).
+                const u32 target = opcode == 0x9c3 ? uniform_register(static_cast<u32>(dest)) : static_cast<u32>(dest);
+                if (target == ~0U) return fail(index, "native uniform special destination");
+                mov_imm(target, 0x00010100);
+                break;
+            }
             if (insn.words[1] || insn.words[2] != (special << 8) ||
                 (special != 0 && special != 17 && special != 29 && special != 30 && special != 31 &&
                  special != 33 && special != 34 && special != 35 &&
@@ -2241,30 +2249,27 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                        (texture.words[2] & ~0x04000fffU) == 0x081e0000U &&
                        !(texture.words[3] & 0xc00001ffU) && texture.Bits(72, 4) != 0;
             };
-            const auto handle_extract = [](const Instruction& shift, u32 packed) {
-                return packed < 16 && !(packed & 1) &&
-                       (shift.words[0] & ~0x00ff0000U) == 0x3f007899U &&
-                       shift.Bits(16, 8) == packed + 1 && shift.words[1] == 20 &&
-                       shift.words[2] == (0x08011600U | packed) && !shift.Bits(96, 9);
+            // Unpredicated USHF.R URtarget, URsource, 20.
+            const auto shift_from = [](const Instruction& shift, u32 target, u32 source) {
+                return (shift.words[0] & ~0x00ff0000U) == 0x3f007899U &&
+                       shift.Bits(16, 8) == target && shift.words[1] == 20 &&
+                       shift.words[2] == (0x08011600U | source) && !shift.Bits(96, 9);
+            };
+            const auto handle_extract = [&](const Instruction& shift, u32 packed) {
+                return packed < 16 && !(packed & 1) && shift_from(shift, packed + 1, packed);
+            };
+            // Unpredicated UMOV URh, URs (s < 63): the source of a handle copied into the pair.
+            const auto handle_copy_source = [&](const Instruction& move) -> u32 {
+                if (move.words[0] != (0x7c82U | (handle << 16)) || move.words[1] >= 63 ||
+                    move.words[2] != 0x08000000U || move.Bits(96, 9))
+                    return ~0U;
+                return move.words[1];
             };
             if (index == 0 || !(gradient ? supported_gradient(insn) : supported_texture(insn)))
                 return fail(index, gradient ? "native uniform gradient texture mode"
                                             : "native uniform bindless texture mode");
-            // The shift that derives URh+1 from the handle (USHF.R URh+1, URh, 20) may sit far above
-            // the texture (a prologue computes both). The nearest one must exist and nothing between
-            // it and the texture may discard or WARPSYNC.
-            u32 shift_index = index;
-            while (shift_index > 0 && !handle_extract(code[shift_index - 1], handle)) --shift_index;
-            if (shift_index == 0) return fail(index, "native uniform bindless texture handle provenance");
-            --shift_index;
-            for (u32 between = shift_index + 1; between < index; ++between) {
-                const u32 op = code[between].Bits(0, 12);
-                // ponytail: a discard or WARPSYNC between shift and texture is refused like upstream; no game
-                // in the shader dumps needs one there.
-                if (op == 0x95b || op == 0x948) return fail(index, "native uniform bindless texture handle provenance");
-            }
             // ponytail: register-only ops are known by opcode; anything else that names the pair is refused.
-            const auto writes_pair = [&](const Instruction& instruction) {
+            const auto writes_register = [&](const Instruction& instruction, u32 reg) {
                 const u32 op = instruction.Bits(0, 12);
                 // ponytail: ops the lowering emits as general-register writers (FMUL, FMNMX, LEA, IADD3,
                 // IPA, TEX, MOV, SEL, LDG with a uniform descriptor). Their dst is never a uniform register,
@@ -2282,19 +2287,23 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                     op == 0x819 || op == 0x81a || op == 0xb60 || op == 0x361 || op == 0xb82 || op == 0x824 ||
                     op == 0x805 || op == 0x981 || supported_texture(instruction);
                 // Control transfers and convergence barriers (BSSY/BSYNC/BREAK name a barrier there).
-                if (register_only || (op >= 0x940 && op <= 0x95f)) return false;
+                if (register_only || (op >= 0x940 && op <= 0x95f) || !touches_uniform_bank(instruction))
+                    return false;
                 const u32 written = instruction.Bits(16, 8);
                 // USHF and 32-bit ULDC write one uniform register; wider uniform writes may also
-                // cover the register below.
+                // cover the register above the one they name.
                 const bool narrow = op == 0x899 || ((op == 0xab9 || op == 0xabb) && instruction.Bits(73, 3) < 5);
-                const u32 low = narrow ? handle : (handle == 0 ? 0 : handle - 1);
-                return written >= low && written <= handle + 1;
+                return written == reg || (!narrow && written + 1 == reg);
             };
-            // Every path into the texture must have run the shift after the last uniform write of the
+            // Every path into the texture must have run a restore after the last uniform write of the
             // pair (the lowering only reads URh, so URh+1 has to equal URh >> 20): a forward search
-            // over the control flow from every write, stopped by the shift. The pair is undefined at
-            // the entry (uniform registers start unloaded), so a path without any write reads an
-            // undefined handle on the console too and is not followed. BRA,
+            // over the control flow from every write, stopped by a restore. A restore is the shift
+            // USHF.R URh+1, URh, 20, or a copy UMOV URh, URs reached only with URh+1 = URs >> 20
+            // (the same search for the pair URs/URh+1, stopped by USHF.R URh+1, URs, 20; Ocarina's
+            // prologues shift and copy every handle; ported from zortos293's Lichii 82b95a65d, which
+            // lowers these textures without checking URh+1). The pair is undefined at the entry
+            // (uniform registers start unloaded), so a path without any write reads an undefined
+            // handle on the console too and is not followed. BRA,
             // BRX (any target) and the CALL.REL.NOINC loop exit (a jump over the next instruction)
             // are followed; calls, returns and unknown branch forms are refused. WARPSYNC, BSSY,
             // BSYNC and BREAK are no-ops in the lowering, so they never transfer control.
@@ -2332,32 +2341,63 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 // A second condition (bits 87-90 not PT) can make even an unpredicated BRA fall through.
                 fallthrough[branch] = !always || noinc_jump || instruction.Bits(87, 4) != 7;
             }
-            std::vector<u8> stale(size, 0); // may be reached with URh+1 not derived from URh
-            std::vector<u32> pending;
-            const auto reach = [&](u32 at) {
-                if (at < size && !stale[at]) {
-                    stale[at] = 1;
-                    pending.push_back(at);
+            // Marks every instruction that may be reached after a write to low or high that no
+            // restore followed.
+            const auto stale_after_writes = [&](u32 low, u32 high, const auto& restores) {
+                std::vector<u8> stale(size, 0);
+                std::vector<u32> pending;
+                const auto reach = [&](u32 at) {
+                    if (at < size && !stale[at]) {
+                        stale[at] = 1;
+                        pending.push_back(at);
+                    }
+                };
+                const auto leave = [&](u32 from) {
+                    if (computed[from]) {
+                        for (u32 at = 0; at < size; ++at) reach(at);
+                        return;
+                    }
+                    if (fallthrough[from]) reach(from + 1);
+                    if (targets[from] >= 0) reach(static_cast<u32>(targets[from]));
+                };
+                for (u32 write = 0; write < size; ++write) {
+                    if (!restores(write) && (writes_register(code[write], low) ||
+                                             writes_register(code[write], high)))
+                        leave(write);
                 }
-            };
-            const auto leave = [&](u32 from) {
-                if (computed[from]) {
-                    for (u32 at = 0; at < size; ++at) reach(at);
-                    return;
+                while (!pending.empty()) {
+                    const u32 at = pending.back();
+                    pending.pop_back();
+                    if (!restores(at)) leave(at);
                 }
-                if (fallthrough[from]) reach(from + 1);
-                if (targets[from] >= 0) reach(static_cast<u32>(targets[from]));
+                return stale;
             };
-            for (u32 write = 0; write < size; ++write) {
-                if (!handle_extract(code[write], handle) && touches_uniform_bank(code[write]) &&
-                    writes_pair(code[write]))
-                    leave(write);
+            std::array<std::vector<u8>, 63> copy_stale; // per URs: reached with URh+1 != URs >> 20
+            const auto copy_restores = [&](u32 at) {
+                const u32 source = handle_copy_source(code[at]);
+                if (source == ~0U) return false;
+                if (copy_stale[source].empty()) {
+                    copy_stale[source] = stale_after_writes(source, handle + 1, [&](u32 shift) {
+                        return shift_from(code[shift], handle + 1, source);
+                    });
+                }
+                return !copy_stale[source][at];
+            };
+            const auto restores = [&](u32 at) {
+                return handle_extract(code[at], handle) || copy_restores(at);
+            };
+            // The nearest restore may sit far above the texture (a prologue computes the handles).
+            // It must exist and nothing between it and the texture may discard or WARPSYNC.
+            u32 restore_index = index;
+            while (restore_index > 0 && !restores(restore_index - 1)) --restore_index;
+            if (restore_index == 0) return fail(index, "native uniform bindless texture handle provenance");
+            for (u32 between = restore_index; between < index; ++between) {
+                const u32 op = code[between].Bits(0, 12);
+                // ponytail: a discard or WARPSYNC between restore and texture is refused like upstream; no
+                // game in the shader dumps needs one there.
+                if (op == 0x95b || op == 0x948) return fail(index, "native uniform bindless texture handle provenance");
             }
-            while (!pending.empty()) {
-                const u32 at = pending.back();
-                pending.pop_back();
-                if (!handle_extract(code[at], handle)) leave(at);
-            }
+            const std::vector<u8> stale = stale_after_writes(handle, handle + 1, restores);
             if (stale[index]) return fail(index, "native uniform bindless texture handle provenance");
             const u32 components = static_cast<u32>(std::popcount(mask));
             const auto valid_span = [](u32 reg, u32 count) {
@@ -2657,14 +2697,33 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             }
             break;
         }
-        case 0x923:
-            // The map region turns a vertex ordinal into its handle, as for geometry programs.
-            if (!geometry_stage && !tessellation_stage)
-                return fail(index, "native stage buffer read outside geometry stage");
-            if (insn.words[1] || insn.words[2] || insn.Bits(24, 8) == 255)
-                return fail(index, "native stage buffer read mode");
-            emit(base(0x5c98000000000000ULL) | (u64{15} << 39) | (u64{insn.Bits(24, 8)} << 20));
+        case 0x923: case 0x927: { // ISBERD / ISBEWR
+            if (geometry_stage || tessellation_stage) {
+                // The map region turns a vertex ordinal into its handle, as for geometry programs.
+                if (opcode != 0x923 || insn.words[1] || insn.words[2] || insn.Bits(24, 8) == 255)
+                    return fail(index, "native stage buffer read mode");
+                emit(base(0x5c98000000000000ULL) | (u64{15} << 39) | (u64{insn.Bits(24, 8)} << 20));
+                break;
+            }
+            // Task and mesh programs' stage buffer (ported from zortos293's Lichii eb02d1dd5).
+            // Ampere: Ra 24-31, offset 40-63, ISBERD dest 16-23, ISBEWR data 32-39; 75 = .32 (else
+            // U8), 76-77 = 3 .ATTR (0 the map region), 78 = .SKEW, 79 = .O (the output buffer).
+            // Kept as an nx2 pseudo instruction (Maxwell 0xefc0, free there) that the frontend
+            // (ISBE_nx2) reads for the task or mesh stage: data/dest 0-7, Ra 8-15, offset 20-43,
+            // .32 44, .ATTR 45, .SKEW 46, .O 47, write 48. Addresses are linear bytes in the region.
+            // Reads come from the input attribute region, writes go to the output buffer.
+            const bool write = opcode == 0x927;
+            const u32 region = insn.Bits(76, 2);
+            const bool output = insn.Bits(79, 1) != 0;
+            if ((insn.words[2] & ~0xf800U) || (region != 0 && region != 3) || write != output ||
+                (!write && region != 3) || (!write && dest == 255))
+                return fail(index, "native stage buffer access mode");
+            emit(0xefc0000000000000ULL | predicate | (write ? u64{insn.Bits(32, 8)} : dest) |
+                 (u64{insn.Bits(24, 8)} << 8) | (u64{insn.Bits(40, 24)} << 20) |
+                 (u64{insn.Bits(75, 1)} << 44) | (u64{region == 3} << 45) |
+                 (u64{insn.Bits(78, 1)} << 46) | (u64{output} << 47) | (u64{write} << 48));
             break;
+        }
         case 0x321: // ALD
         case 0x322: { // AST
             // Bit 76 = .P (patch attribute), 77 = .PHYS (indexed), 79 = .O (ALD reads outputs).
@@ -2841,8 +2900,10 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 emit(base(0x5c58000000000000ULL) | (u64{250} << 8) | (u64{249} << 20));                    // + 1
                 break;
             }
-            if (opcode == 0xd08 && (insn.words[2] != 0x08001000U ||
-                                   insn.Bits(24, 8) || insn.words[1] > 63 || insn.Bits(96, 9)))
+            // The uniform source sits in bits 32-37 with .ABS at 62 and .NEG at 63, as for the
+            // other ALU ops' uniform operand (operand(1) applies both).
+            if (opcode == 0xd08 && (insn.words[2] != 0x08001000U || insn.Bits(24, 8) ||
+                                   (insn.words[1] & ~0xc0000000U) > 63 || insn.Bits(96, 9)))
                 return fail(index, "native uniform reciprocal mode");
             if (operation > 8 || operation == 6 || operation == 7 ||
                 insn.Bits(80, 12) != (opcode == 0xd08 ? 0x800U : 0U))
@@ -3183,6 +3244,14 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
         }
         case 0x819: { // SHF.HI, immediate shift
             const bool is_signed = insn.Bits(73, 2) == 2;
+            if ((insn.words[2] & ~0xffU) == 0x1200U && insn.words[1] <= 32) {
+                // SHF.R.U64 low word (bits 73-74 = 1 U64, 76 = .R, 75 .W and 80 .HI clear): up to
+                // 32 the same as Maxwell's U32-clamped SHF.R of the pair, whose immediate field
+                // runs into the clamp bits 37-38 (ported from zortos293's Lichii c9ebb5c3a).
+                emit(base(0x38f8000000000000ULL) | (u64{insn.Bits(24, 8)} << 8) |
+                     (u64{insn.words[1]} << 20) | (u64{insn.Bits(64, 8)} << 39));
+                break;
+            }
             if (!insn.Bits(80, 1) && !insn.Bits(76, 1) && insn.Bits(64, 8) == 255 &&
                 insn.Bits(73, 2) == 3 && !insn.Bits(75, 1) && insn.words[1] <= 32) {
                 emit(base(0x3848000000000000ULL) | (u64{insn.Bits(24, 8)} << 8) | (u64{insn.words[1]} << 20));
