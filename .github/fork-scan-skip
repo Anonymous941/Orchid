@@ -139,3 +139,8 @@ f314dc672 zortos293/Eglantine: shader-sweep cache format flag, tooling Orchid do
 51c850a79 zortos293/Eglantine: static shader extraction and NUP export tooling, debug-only
 5c3581501 zortos293/Eglantine: native rejection capture diagnostics, debug-only
 7d9596a4b zortos293/Eglantine: rejected-stage capture diagnostics, debug-only
+8dc4ca15a Drizz1le/Lichii: pausing instead of resetting query counters can retain banks indefinitely; bound follow-ups truncate valid queries at 256 slots without general compaction
+015f76283 Drizz1le/Lichii: follow-up resets paused counters after 256 slots, truncating valid long occlusion queries
+5ad6c8501 anthonyloukinas/Lichii: same 256-slot query truncation as 015f76283
+47e1e9520 Kajcsi/Lichii: same 256-slot query truncation as 015f76283
+2aecf0e5a favoritul/Lichii: same 256-slot query truncation as 015f76283
