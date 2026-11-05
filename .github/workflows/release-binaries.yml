@@ -156,9 +156,10 @@ jobs:
       - name: Install Linux dependencies
         if: startsWith(matrix.platform, 'linux')
         shell: bash
-        # The runner's Ubuntu mirror sometimes stalls without an error and apt waits forever (the
-        # first 0.7.2 run hung here for over 15 minutes, against 45 s normally). Each attempt is
-        # timed out and retried.
+        # The runner's Azure Ubuntu mirror sometimes crawls at 20-50 kB/s (the first 0.7.2 run sat
+        # here for over 15 minutes, against 45 s normally). Each attempt is timed out, and the
+        # retries switch to Ubuntu's own archive. Qt comes from install-qt-action (6.8.3), which
+        # CMake and linuxdeploy use, so Ubuntu's Qt 6.4 packages are not installed.
         timeout-minutes: 25
         run: |
           set -euo pipefail
@@ -166,8 +167,7 @@ jobs:
           packages=(
             autoconf cmake g++ gcc git glslang-tools libglu1-mesa-dev
             libpulse-dev libtool libudev-dev libxkbcommon-x11-0
-            mesa-common-dev nasm ninja-build qt6-base-private-dev
-            qt6-charts-dev qt6-tools-dev libavfilter-dev libavcodec-dev
+            mesa-common-dev nasm ninja-build libavfilter-dev libavcodec-dev
             libswscale-dev pkg-config zlib1g-dev libva-dev libvdpau-dev
             spirv-tools spirv-headers libusb-1.0-0-dev
             libboost-dev libboost-fiber-dev libboost-context-dev
@@ -176,6 +176,10 @@ jobs:
             libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1
           )
           for attempt in 1 2 3; do
+            if [ "$attempt" -gt 1 ]; then
+              sudo sed -i 's|http://azure\.archive\.ubuntu\.com|http://archive.ubuntu.com|g' \
+                /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2> /dev/null || true
+            fi
             if sudo timeout 180 apt-get "${apt_opts[@]}" update &&
                sudo timeout 420 apt-get "${apt_opts[@]}" install -y --no-install-recommends "${packages[@]}"; then
               exit 0
