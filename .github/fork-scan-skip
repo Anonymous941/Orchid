@@ -166,3 +166,4 @@ caa4ca8d5 zortos293/Eglantine: 256-slot query cap truncates valid long queries w
 d2ddd044b Vortex727/eglantine-zortos293: 256-slot query cap truncates valid long queries without compaction
 87203d593 Vortex727/eglantine-zortos293: 256-slot query cap truncates valid long queries without compaction
 936aca8d9 pattex67/Aubepine: 256-slot query cap truncates valid long queries without compaction
+baf60ba8 larryliu985/Eglantine: Orchid already tracks ISBEWR data registers; resetting occlusion queries after one bank can truncate valid long reset-to-report windows
