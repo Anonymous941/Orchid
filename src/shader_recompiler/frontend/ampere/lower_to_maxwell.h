@@ -15,21 +15,10 @@
 #include <vector>
 #include "common/common_types.h"
 #include "shader_recompiler/frontend/ampere/geometry_exit.h"
+#include "shader_recompiler/frontend/ampere/instruction.h"
+#include "shader_recompiler/frontend/ampere/register_pressure.h"
 
 namespace Shader::Ampere {
-
-struct Instruction {
-    std::array<u32, 4> words;
-
-    u32 Bits(u32 offset, u32 count) const {
-        u64 bits = words[offset / 32];
-        if (offset / 32 + 1 < words.size()) {
-            bits |= u64{words[offset / 32 + 1]} << 32;
-        }
-        return static_cast<u32>((bits >> (offset % 32)) & ((u64{1} << count) - 1));
-    }
-};
-static_assert(sizeof(Instruction) == 16);
 
 struct LoweredProgram {
     std::vector<u64> instructions;
@@ -57,7 +46,7 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
                                      TessellationStage tessellation = TessellationStage::None) {
     const bool tessellation_stage = tessellation != TessellationStage::None;
     LoweredProgram result;
-    struct Relocation { u32 output_index; s64 target; bool call = false; };
+    struct Relocation { u32 output_index; s64 target; bool call = false; u32 output_target = ~0U; };
     std::vector<Relocation> relocations;
     std::vector<u32> barrier_tokens;
     std::vector<u32> call_targets;
@@ -88,7 +77,8 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
     const auto finish = [&](u32 index) {
         for (const auto& relocation : relocations) {
             if (relocation.target > index) return fail(index, "native branch or call leaves captured program");
-            const u32 target = result.source_instruction_offsets[static_cast<size_t>(relocation.target)];
+            const u32 target = relocation.output_target != ~0U ? relocation.output_target :
+                result.source_instruction_offsets[static_cast<size_t>(relocation.target)];
             const s64 relative = s64{address_of(target)} - address_of(relocation.output_index) - 8;
             if (relative < -0x800000 || relative > 0x7fffff) return fail(index, "lowered branch distance");
             result.instructions[relocation.output_index] |= (static_cast<u64>(relative) & 0xffffff) << 20;
@@ -133,14 +123,28 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
                 (insn.Bits(16, 8) == *active_link || (pair && insn.Bits(16, 8) + 1 == *active_link)))
                 return fail(index, "native callee overwrites link register");
         }
-        // Scratch values and emulated uniform state occupy reserved high GPRs.
-        // Reject native accesses that could alias that state.
+        // Scratch values and emulated uniform state occupy reserved high GPRs. Native accesses
+        // that would alias that state are shadowed (moved to an IR-only bank around the
+        // instruction, see register_pressure.h) or rejected.
+        bool requires_shadow = false;
         for (u32 bit : {16U, 24U, 32U, 64U}) {
             if (bit == 32 && insn.Bits(9, 3) != 1 && opcode != 0xb60 && opcode != 0xb66 && opcode != 0xf60 && opcode != 0xf6c && opcode != 0x988 && opcode != 0xf66) continue;
             const u32 reg = insn.Bits(bit, 8);
-            if (reg >= (uses_uniform_bank ? 216U : 246U) && reg < 255) return fail(index, "native program uses lowering scratch registers");
-            if (reg < 255) highest_source = std::max(highest_source, reg);
+            if (reg >= (uses_uniform_bank ? 216U : 246U) && reg < 255) requires_shadow = true;
+            else if (reg < 255) highest_source = std::max(highest_source, reg);
         }
+        RegisterPressure pressure{insn, {}, {}};
+        if (requires_shadow) {
+            // Only with the uniform bank: R216 is quartet aligned, R246 is not. Borrowed quartets
+            // stay below R180, where UR28-UR62 may live.
+            if (!uses_uniform_bank) return fail(index, "native program uses lowering scratch registers");
+            pressure = PrepareRegisterPressure(insn, 216, 180);
+            if (!pressure.valid) return fail(index, "native register shadowing mode");
+            insn = pressure.instruction;
+            result.instructions.insert(result.instructions.end(), pressure.prefix.begin(), pressure.prefix.end());
+        }
+        const size_t instruction_start = result.instructions.size();
+        const size_t relocation_start = relocations.size();
         // UR0-UR21 live in R216-R237 and UR22-UR27 in R240-R245 (R239 holds the uniform
         // predicates), so even/odd pairs stay adjacent. Sites that still check reg < 16 rely on
         // UR0-UR15 being R216-R231.
@@ -3828,6 +3832,15 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             emit(0x38f0000000070000ULL | (u64{254} << 8) | (u64{output_mask} << 20));
         }
         if (guarded_uniform) restore_predicate(guard_mask);
+        if (!pressure.suffix.empty()) {
+            // Branches that skip the rest of this instruction land on its copies back.
+            for (size_t i = relocation_start; i < relocations.size(); ++i) {
+                auto& pending = relocations[i];
+                if (!pending.call && pending.output_index >= instruction_start && pending.target == index + 1)
+                    pending.output_target = static_cast<u32>(result.instructions.size());
+            }
+            result.instructions.insert(result.instructions.end(), pressure.suffix.begin(), pressure.suffix.end());
+        }
     }
     return fail(static_cast<u32>(code.size()), main_exited ? "native program lacks captured library return" : "native program has no unconditional EXIT");
 }
