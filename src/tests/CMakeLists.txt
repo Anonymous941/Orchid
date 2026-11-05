@@ -73,6 +73,7 @@ add_executable(tests
     video_core/ampere_i2f64.cpp
     video_core/ampere_uniform_fset.cpp
     video_core/compute_storage_buffers.cpp
+    video_core/compute_binding_diagnostic.cpp
     video_core/cooperative_matrix.cpp
     video_core/texture_depth_float.cpp
     video_core/texture_descriptor_bounds.cpp
