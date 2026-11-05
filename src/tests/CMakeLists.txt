@@ -69,6 +69,7 @@ add_executable(tests
     video_core/compute_storage_buffers.cpp
     video_core/cooperative_matrix.cpp
     video_core/texture_depth_float.cpp
+    video_core/texture_r2ur_handle.cpp
     video_core/ampere_kirby.cpp
     video_core/ampere_geometry.cpp
     video_core/ampere_geometry_lowering.cpp
