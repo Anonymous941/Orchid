@@ -1848,12 +1848,44 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 return fail(index, "native fragment discard mode");
             emit(0xe33000000000000fULL | predicate);
             break;
-        case 0x243: // F2IP.U8.F32.NTZ Rd, RZ, Rb, RZ (Ocarina of Time's scene vertex shaders)
+        case 0x243: // F2IP.U8.F32.NTZ Rd, Ra, Rb, RZ (Ocarina of Time)
             // Converts B into byte 0 and A into byte 1, C[15:0] above them (PTX cvt.pack order, as
-            // F2FP's merge). With A and C RZ that is the byte F2I of Rb. Bit 74 is unverified, so
-            // only this exact mode word is taken (Lichii lowers it the same way).
-            if (insn.Bits(24, 8) != 255 || (insn.words[1] & ~0xffU) || insn.words[2] != 0x0000c4ffU)
-                return fail(index, "native packed float-to-byte mode");
+            // F2FP's merge). Keep the existing exact RZ, Rb, RZ truncating form below.
+            if (insn.Bits(24, 8) != 255 || (insn.words[1] & ~0xffU) ||
+                insn.words[2] != 0x0000c4ffU) {
+                // Two clamped bytes, nearest or truncate; retain the observed bit 74 and RZ C.
+                const u32 a = insn.Bits(24, 8), b = insn.Bits(32, 8);
+                const u32 rounding = insn.Bits(78, 2);
+                if ((insn.words[1] & ~0xffU) || (insn.words[2] & ~0xc000U) != 0x000004ffU ||
+                    (rounding != 0 && rounding != 3) || (a >= 246 && a != 255) ||
+                    (b >= 246 && b != 255) || dest >= 246 || (insn.words[3] & 0xc00001ffU))
+                    return fail(index, "native packed float-to-byte mode");
+                const auto to_byte = [&](u32 source, u32 out) {
+                    if (source == 255) {
+                        emit(0x5c98000000000000ULL | predicate | out | (u64{15} << 39) | (u64{255} << 20));
+                        return;
+                    }
+                    // Match the unsigned byte F2I path: NaN to zero, then clamp to [0, 255].
+                    emit(0x5800000000000000ULL | predicate | 250 | (u64{source} << 8) |
+                         (u64{source} << 20) | (u64{7} << 39) | (u64{7} << 48));
+                    emit(0x5c40000000000000ULL | predicate | 250 | (u64{source} << 8) |
+                         (u64{250} << 20) | (u64{7} << 48));
+                    mov_imm(252, 0U);
+                    emit(0x5c60000000000000ULL | predicate | 250 | (u64{250} << 8) |
+                         (u64{252} << 20) | (u64{15} << 39));
+                    mov_imm(252, 0x437f0000U);
+                    emit(0x5c60000000000000ULL | predicate | 250 | (u64{250} << 8) |
+                         (u64{252} << 20) | (u64{7} << 39));
+                    emit(0x5cb0000000000000ULL | predicate | out | (u64{2} << 8) | (u64{2} << 10) |
+                         (u64{250} << 20) | (u64{rounding} << 39));
+                };
+                to_byte(a, 248);
+                to_byte(b, 249);
+                // Convert both inputs before writing Rd, which may alias either one.
+                emit(base(0x5c18000000000000ULL) | (u64{248} << 8) | (u64{249} << 20) |
+                     (u64{8} << 39));
+                break;
+            }
             insn.words[0] &= 0x00ffffffU;
             insn.words[2] = 0x0020e000U; // byte F2I: unsigned, truncating
             opcode = 0x305;

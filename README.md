@@ -233,6 +233,10 @@ source and author in its message.
 - [Shenopi/Lichii](https://github.com/Shenopi/Lichii) (999sian): preserve active custom settings
   while reloading global configuration, adapted from the config-only changes in
   [88ffd1f312f9a38fd45575dc8e1c7d66ef9b4f6e](https://github.com/Shenopi/Lichii/commit/88ffd1f312f9a38fd45575dc8e1c7d66ef9b4f6e).
+- [trianglebraindev/Lichii](https://github.com/trianglebraindev/Lichii) (trianglebraindev,
+  with Claude Opus 5.5): two-source `F2IP.U8.F32` byte packing, adapted to Orchid's register
+  shadowing from
+  [ac82c78b5ca4cfbcb11e3043f05a3354f444f027](https://github.com/trianglebraindev/Lichii/commit/ac82c78b5ca4cfbcb11e3043f05a3354f444f027).
 
 ## License
 
