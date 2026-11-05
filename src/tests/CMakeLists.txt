@@ -46,6 +46,7 @@ add_executable(tests
     video_core/storage_buffer_pointer_tracking.cpp
     video_core/storage_buffer_control_flow.cpp
     video_core/memory_tracker.cpp
+    video_core/buffer_cache_download.cpp
     video_core/memory_budget.cpp
     video_core/astc_recompression_override.cpp
     video_core/nx2_video_configuration.cpp
