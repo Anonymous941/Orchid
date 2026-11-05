@@ -464,13 +464,14 @@ TEST_CASE("Ampere unsigned wide IMAD reports full-sum carry after aliased guarde
                             REQUIRE(lowered);
                             const auto before = machine;
                             const bool active = ((guard & 7) == 7 || before.predicates[guard & 7]) != bool(guard & 8);
-                            const unsigned __int128 sum =
-                                static_cast<unsigned __int128>(values[0]) * values[1] +
-                                values[2] + (static_cast<unsigned __int128>(values[3]) << 32);
-                            const u64 expected = active ? static_cast<u64>(sum) :
+                            const u64 product = u64{values[0]} * values[1];
+                            const u64 addend = (u64{values[3]} << 32) | values[2];
+                            const u64 sum = product + addend;
+                            const bool carry = sum < product;
+                            const u64 expected = active ? sum :
                                 before.Read(dest) | (u64{before.Read(dest + 1)} << 32);
                             auto expected_state = before;
-                            if (active) expected_state.predicates[carry_output] = (sum >> 64) != 0;
+                            if (active) expected_state.predicates[carry_output] = carry;
                             machine.Run(lowered.instructions);
                             REQUIRE((machine.Read(dest) | (u64{machine.Read(dest + 1)} << 32)) == expected);
                             CheckUnchanged(expected_state, machine, dest, 2);
