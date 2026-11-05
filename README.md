@@ -218,6 +218,9 @@ source and author in its message.
 - [Hydro74000/Edlws](https://github.com/Hydro74000/Edlws) (Hydro74000): make `UniqueFunction`
   own copies of lvalue callables while moving rvalues, from
   [dd8039f6afc92803938d641a484312931acae9ca](https://github.com/Hydro74000/Edlws/commit/dd8039f6afc92803938d641a484312931acae9ca).
+- [DrSergioRFilho/Lichii](https://github.com/DrSergioRFilho/Lichii) (Dr. Sergio,
+  with Claude Fable 5.1): check nested config array bounds against the innermost array, from
+  [08d3388f0f5496be67dd5f83dfdcddd0fcd59358](https://github.com/DrSergioRFilho/Lichii/commit/08d3388f0f5496be67dd5f83dfdcddd0fcd59358).
 
 ## License
 

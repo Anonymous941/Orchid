@@ -1078,8 +1078,8 @@ void Config::SetArrayIndex(const int index) {
 
     const int array_index = index + 1;
 
-    // You can't exceed the known max size of the array by more than 1
-    ASSERT(array_stack.front().size + 1 >= array_index);
+    // You can't exceed the known max size of the innermost array by more than 1
+    ASSERT(array_stack.back().size + 1 >= array_index);
 
     // Change the config array size to the current index since you may want
     // to reduce the number of elements that you read back from the config
