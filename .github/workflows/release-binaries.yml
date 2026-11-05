@@ -561,6 +561,7 @@ jobs:
         run: |
           mkdir -p build/release/bin/licenses
           cp -R dist/licenses/. build/release/bin/licenses/
+          cp LICENSE.txt build/release/bin/licenses/ffmpeg/COPYING.GPLv3
 
       - name: Package Linux tar.gz
         if: startsWith(matrix.platform, 'linux')
