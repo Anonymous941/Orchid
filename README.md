@@ -238,6 +238,14 @@ source and author in its message.
   shadowing from
   [ac82c78b5ca4cfbcb11e3043f05a3354f444f027](https://github.com/trianglebraindev/Lichii/commit/ac82c78b5ca4cfbcb11e3043f05a3354f444f027).
 
+- [leadaenima/Lichii](https://github.com/leadaenima/Lichii) (Cursor Agent, co-authored with
+  leadaenima): AMDVLK dynamic subgroup shuffle workaround, adapted from
+  [957913cf14ca1e3776a4984151b63434af543217](https://github.com/leadaenima/Lichii/commit/957913cf14ca1e3776a4984151b63434af543217)
+  and [201450e90a87b494a8d1dc34d32558033a715438](https://github.com/leadaenima/Lichii/commit/201450e90a87b494a8d1dc34d32558033a715438).
+  Graphics use the 32-lane broadcast fallback only when subgroup size 32 can be enforced for
+  that stage. Compute and unsupported graphics stages retain Shuffle; Qualcomm keeps its
+  existing full-subgroup fallback. Pipeline hash diagnostics are omitted.
+
 ## License
 
 GPLv3 or any later version, see [LICENSE.txt](LICENSE.txt). Started from
