@@ -15,6 +15,7 @@
 #include <fmt/ranges.h>
 
 #include "common/range_sets.inc"
+#include "common/unmapped_read_diagnostic.h"
 #include "video_core/buffer_cache/buffer_cache_base.h"
 #include "video_core/buffer_cache/storage_buffer_size.h"
 #include "video_core/buffer_cache/uniform_stream_reuse.h"
@@ -2321,7 +2322,10 @@ void BufferCache<P>::TouchBuffer(Buffer& buffer, BufferId buffer_id) noexcept {
 }
 
 template <class P>
-bool BufferCache<P>::SynchronizeBuffer(Buffer& buffer, DAddr device_addr, u32 size) {
+bool BufferCache<P>::SynchronizeBuffer(Buffer& buffer, DAddr device_addr, u32 size,
+                                       std::source_location caller) {
+    Common::UnmappedReadDiagnostic::Scope trace;
+    trace.Sync(device_addr, size, caller);
     if (!Nx2DrawTuning() || size == 0) {
         return SynchronizeBufferPages(buffer, device_addr, size);
     }
