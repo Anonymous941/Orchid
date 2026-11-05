@@ -2392,9 +2392,10 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 if (register_only || (op >= 0x940 && op <= 0x95f) || !touches_uniform_bank(instruction))
                     return false;
                 const u32 written = instruction.Bits(16, 8);
-                // USHF and 32-bit ULDC write one uniform register; wider uniform writes may also
-                // cover the register above the one they name.
-                const bool narrow = op == 0x899 || ((op == 0xab9 || op == 0xabb) && instruction.Bits(73, 3) < 5);
+                // USHF, 32-bit ULDC and R2UR (the one form lowered, case 0x3c2) write one uniform
+                // register; wider uniform writes may also cover the register above the one they name.
+                const bool narrow = op == 0x899 || ((op == 0xab9 || op == 0xabb) && instruction.Bits(73, 3) < 5) ||
+                                    (op == 0x3c2 && !instruction.words[1] && instruction.words[2] == 0x000e0000U);
                 return written == reg || (!narrow && written + 1 == reg);
             };
             // Every path into the texture must have run a restore after the last uniform write of the
