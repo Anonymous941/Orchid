@@ -212,6 +212,9 @@ source and author in its message.
 - rdenno: the Mario Tennis Fever fixes in 0.5.1.
 - [Drizz1le/Lichii](https://github.com/Drizz1le/Lichii) (Inc0rporate, with Claude Opus 5.5):
   count nested shader returns before reordering demotes for AMD drivers.
+- [DrSergioRFilho/Lichii](https://github.com/DrSergioRFilho/Lichii) (Dr. Sergio, with Claude
+  Fable 5.1): apply LayeredFS mods to NUP titles without reapplying their merged update, from
+  [fe29f5c45ef8f8ab826f148827a1b3962c32d7d7](https://github.com/DrSergioRFilho/Lichii/commit/fe29f5c45ef8f8ab826f148827a1b3962c32d7d7).
 - [chuppatricky/Lichii](https://github.com/chuppatricky/Lichii) (chuppatricky, with Claude Opus 5.5):
   shadow Ampere RED and SURED data registers, adapted from
   [fc5d6dc31b49ae614d06c05302f4ee2abdf8ce4c](https://github.com/chuppatricky/Lichii/commit/fc5d6dc31b49ae614d06c05302f4ee2abdf8ce4c).
