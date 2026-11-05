@@ -174,6 +174,9 @@ source and author in its message.
   test fixes (kraibse).
 - [ZnOw01/Primrose](https://github.com/ZnOw01/Primrose) (ZnOw01): shader cache invalidation
   lifetime fix, adapted to renderer-thread retirement.
+- [exploitizm/Eglantine](https://github.com/exploitizm/Eglantine) (exploitizm): signed IADD32
+  negative-overflow boundary fix for GLSL and SPIR-V, adapted from
+  [c2f9811073bfe617524d4413742a4d4406fd287a](https://github.com/exploitizm/Eglantine/commit/c2f9811073bfe617524d4413742a4d4406fd287a).
 - [Selevet Eglantine](https://github.com/sylvieistaken/selevet-eglantine) (sylvieistaken): the
   windowed GPU mapping table diff, hot loop shortcuts, F2I, local spill and texture query lowering,
   device memory rebuild on layout changes, decoder end of stream, Windows commit retries, and the
