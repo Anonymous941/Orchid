@@ -190,7 +190,7 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
                    : opcode == 0x8a5 ? 0x825 : 0x210;
         }
         const bool uniform_predication = opcode == 0xabb || opcode == 0xab9 || opcode == 0xc82 || opcode == 0x882 ||
-                                         opcode == 0x899 || opcode == 0x499;
+                                         opcode == 0x899 || opcode == 0x499 || opcode == 0x287 || opcode == 0x887;
         const u32 native_predicate = insn.Bits(12, 4);
         const bool guarded_uniform = (uniform_predication || uniform_guard) && native_predicate != 7;
         // A uniform guard UPn lives in R239 bit 6-n and is swapped into P(6-n) for the op.
@@ -1615,10 +1615,11 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             const u32 condition = insn.Bits(87, 3);
             const u32 target = uniform_register(static_cast<u32>(dest));
             const u32 a = uniform_register(insn.Bits(24, 8)), b = opcode == 0x887 ? 252U : uniform_register(insn.Bits(32, 8));
+            // A UPn guard (Ocarina's @UP4 USEL) is swapped in by the common code.
             if (condition > 6 || target == ~0U || a == ~0U || b == ~0U ||
-                insn.Bits(12, 4) != 7 || (insn.words[2] & ~0x07800000U) != 0x08000000U)
+                (insn.words[2] & ~0x07800000U) != 0x08000000U)
                 return fail(index, "native uniform select mode");
-            if (opcode == 0x887 && index > 0 && insn.words[1] <= 0x7ffff &&
+            if (!guarded_uniform && opcode == 0x887 && index > 0 && insn.words[1] <= 0x7ffff &&
                 code[index - 1].Bits(0, 12) == 0x88c && code[index - 1].Bits(12, 4) == 7 &&
                 code[index - 1].Bits(24, 8) == insn.Bits(24, 8) && code[index - 1].Bits(81, 3) == condition &&
                 code[index - 1].words[1] == insn.words[1] &&
@@ -1631,11 +1632,17 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             }
             if (opcode == 0x887) mov_imm(252, insn.words[1]);
             const u32 temporary = 6 - condition, mask = 1U << temporary;
-            emit(0x38e8000000070000ULL | 253 | (u64{255} << 8) | (u64{mask} << 20));
-            emit(0x38f0000000070000ULL | (u64{239} << 8) | (u64{mask} << 20));
-            emit(0x5ca0000000070000ULL | target | (u64{a} << 8) | (u64{b} << 20) |
+            // Under a guard R253 already holds the guest P(guard), so the condition saves into R254;
+            // a condition equal to the guard is in place already.
+            const u32 saved = guarded_uniform ? 254U : 253U;
+            const bool swap = mask != guard_mask;
+            if (swap) {
+                emit(0x38e8000000070000ULL | saved | (u64{255} << 8) | (u64{mask} << 20));
+                emit(0x38f0000000070000ULL | (u64{239} << 8) | (u64{mask} << 20));
+            }
+            emit(0x5ca0000000000000ULL | predicate | target | (u64{a} << 8) | (u64{b} << 20) |
                 (u64{temporary} << 39) | (u64{insn.Bits(90, 1)} << 42));
-            emit(0x38f0000000070000ULL | (u64{253} << 8) | (u64{mask} << 20));
+            if (swap) emit(0x38f0000000070000ULL | (u64{saved} << 8) | (u64{mask} << 20));
             break;
         }
         case 0x381: case 0x981: { // LDG.E of 8 to 128 bits, register or uniform 64-bit address.
