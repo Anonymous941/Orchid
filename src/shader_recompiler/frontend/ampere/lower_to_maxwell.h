@@ -71,7 +71,7 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
     const auto touches_uniform_bank = [](const Instruction& instruction) {
         const u32 op = instruction.Bits(0, 12);
         return op == 0x3c4 || op == 0x2bd || op == 0xc0b || op == 0xc0c || op == 0x986 || op == 0x9a8 || op == 0xc12 || op == 0xc17 || op == 0xe24 || op == 0xc24 || op == 0xd00 || op == 0xd09 || op == 0x9c3 || op == 0xc45 || op == 0x2a4 || op == 0x891 || op == 0x890 || op == 0x290 || op == 0x28c || op == 0x88c || op == 0x287 || op == 0x887 || op == 0x958 || op == 0xab9 || op == 0xabb || op == 0x899 || op == 0xc20 || op == 0xe21 || op == 0xe23 || op == 0xc02 ||
-               op == 0x886 || op == 0x3c2 || op == 0xc82 || op == 0x882 || op == 0x292 || op == 0x092 || op == 0x892 || op == 0x291 || op == 0x981 || op == 0xc13 || op == 0xc10 || op == 0xc11 || op == 0xc23 || op == 0x526 || op == 0x2be || op == 0x2bf || op == 0x896 || op == 0x8a4 || op == 0xd05 || ((op == 0x984 || op == 0x988) && instruction.Bits(91, 1)) || op == 0x89c || op == 0x883 || op == 0x2a5 || op == 0xd06 || op == 0x299 || op == 0x499 || op == 0xc09 || op == 0xc0a || op == 0xf60 || op == 0xf6c || (op == 0x81c && instruction.Bits(67, 1));
+               op == 0x886 || op == 0x3c2 || op == 0xc82 || op == 0x882 || op == 0x292 || op == 0x092 || op == 0x892 || op == 0x291 || op == 0x981 || op == 0xc13 || op == 0xc10 || op == 0xc11 || op == 0xc23 || op == 0x526 || op == 0x2be || op == 0x2bf || op == 0x896 || op == 0x8a4 || op == 0x8a5 || op == 0xd05 || ((op == 0x984 || op == 0x988) && instruction.Bits(91, 1)) || op == 0x89c || op == 0x883 || op == 0x2a5 || op == 0xd06 || op == 0x299 || op == 0x499 || op == 0xc09 || op == 0xc0a || op == 0xf60 || op == 0xf6c || (op == 0x81c && instruction.Bits(67, 1));
     };
     for (const auto& instruction : code) {
         const u32 op = instruction.Bits(0, 12);
@@ -157,7 +157,8 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
         bool checked_guard = false;
         u32 uniform_output = 7; // ULOP3's UPn output: computed in P(6-n), then merged into R239
         if (opcode == 0x2a4 || opcode == 0x8a4 || opcode == 0x891 || opcode == 0x890 || opcode == 0x290 ||
-            opcode == 0x292 || opcode == 0x092 || opcode == 0x892 || opcode == 0x291 || opcode == 0x896) {
+            opcode == 0x292 || opcode == 0x092 || opcode == 0x892 || opcode == 0x291 || opcode == 0x896 ||
+            opcode == 0x8a5) {
             // A UPn guard is swapped into P(6-n) around the op; lowerings that would clobber the
             // saved predicate or write outside scratch unguarded are rejected after emission.
             // Any UPn/!UPn execution predicate, including the inverted ones (0xd = !UP5): the
@@ -185,7 +186,8 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
                 insn.words[2] = (insn.words[2] & ~(7U << 17)) | ((6 - uniform_output) << 17);
             }
             opcode = opcode == 0x2a4 ? 0x224 : opcode == 0x8a4 ? 0x824 : opcode == 0x891 ? 0x811 : opcode == 0x890 ? 0x810
-                   : opcode == 0x292 || opcode == 0x092 ? 0x212 : opcode == 0x892 ? 0x812 : opcode == 0x291 ? 0x211 : opcode == 0x896 ? 0x816 : 0x210;
+                   : opcode == 0x292 || opcode == 0x092 ? 0x212 : opcode == 0x892 ? 0x812 : opcode == 0x291 ? 0x211 : opcode == 0x896 ? 0x816
+                   : opcode == 0x8a5 ? 0x825 : 0x210;
         }
         const bool uniform_predication = opcode == 0xabb || opcode == 0xab9 || opcode == 0xc82 || opcode == 0x882 ||
                                          opcode == 0x899 || opcode == 0x499;
@@ -2954,33 +2956,45 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
         case 0x20c: case 0x80c: case 0xa0c: case 0xc0c: { // ISETP
             const bool floating = (opcode & 0x1ff) == 0xb;
             if (!floating && insn.Bits(72, 1)) {
-                // ISETP.EX: the high word of a 64-bit compare, the low word's result in the
-                // predicate at 68-71. EQ and NE are Maxwell's own combine with a source
-                // predicate. The orderings are (a strictly-ordered b) OR (a == b AND low),
-                // through P6. The instruction's own input must be PT.
+                // ISETP.EX: the high word of a 64-bit compare, the low words' result in the
+                // predicate at 68-71. EQ: high equal AND low; NE: high different OR low; the
+                // orderings: high strictly ordered OR (high equal AND low). That goes into a free
+                // temporary predicate, which PSETP then combines (74-75) with the input at 87-90.
                 const u32 ex_compare = insn.Bits(76, 3);
-                if (ex_compare == 0 || ex_compare == 7 || insn.Bits(87, 4) != 7 ||
-                    insn.Bits(74, 2)) {
+                const u32 destination = insn.Bits(81, 3), destination_b = insn.Bits(84, 3);
+                const u32 low = insn.Bits(68, 4), accumulate = insn.Bits(87, 4);
+                const u32 ex_combine = insn.Bits(74, 2);
+                if (ex_compare == 0 || ex_compare == 7 || ex_combine == 3) {
                     return fail(index, "native extended integer comparison");
                 }
                 const u32 ea = operand(0, false), eb = operand(1, false);
-                const u64 sign = u64{insn.Bits(73, 1)} << 48;
-                const u64 low = (u64{insn.Bits(68, 3)} << 39) | (u64{insn.Bits(71, 1)} << 42);
-                const u64 outs = insn.Bits(84, 3) | (u64{insn.Bits(81, 3)} << 3);
-                if (ex_compare == 2 || ex_compare == 5) {
-                    emit(0x5b60000000000000ULL | predicate | outs | (u64{ea} << 8) |
-                         (u64{eb} << 20) | low | (u64{ex_compare == 5 ? 1U : 0U} << 45) |
-                         sign | (u64{ex_compare} << 49));
-                } else {
-                    const u32 strict = ex_compare <= 3 ? 1U : 4U; // LT, LE: LT. GT, GE: GT
-                    save_predicate();
-                    emit(0x5b60000000000000ULL | predicate | 7 | (u64{6} << 3) | (u64{ea} << 8) |
-                         (u64{eb} << 20) | low | sign | (u64{2} << 49));
-                    emit(0x5b60000000000000ULL | predicate | outs | (u64{ea} << 8) |
-                         (u64{eb} << 20) | (u64{6} << 39) | (u64{1} << 45) | sign |
-                         (u64{strict} << 49));
-                    restore_predicate();
+                u32 temporary = 0;
+                while (temporary == destination || temporary == destination_b ||
+                       temporary == (low & 7) || temporary == (accumulate & 7) ||
+                       temporary == insn.Bits(12, 3)) {
+                    ++temporary;
                 }
+                const auto ex_isetp = [&](u32 compare, u32 input, u32 bop) {
+                    return 0x5b60000000000000ULL | predicate | 7 | (u64{temporary} << 3) |
+                           (u64{ea} << 8) | (u64{eb} << 20) | (u64{input & 7} << 39) |
+                           (u64{input >> 3} << 42) | (u64{bop} << 45) |
+                           (u64{insn.Bits(73, 1)} << 48) | (u64{compare} << 49);
+                };
+                constexpr u32 And = 0, Or = 1, Lt = 1, Eq = 2, Gt = 4, Ne = 5;
+                save_predicate(1U << temporary);
+                if (ex_compare == Eq) {
+                    emit(ex_isetp(Eq, low, And));
+                } else if (ex_compare == Ne) {
+                    emit(ex_isetp(Ne, low, Or));
+                } else {
+                    emit(ex_isetp(Eq, low, And));
+                    emit(ex_isetp(ex_compare <= 3 ? Lt : Gt, temporary, Or));
+                }
+                // PSETP: temporary AND PT, combined with the input predicate.
+                emit(0x5090000000000000ULL | predicate | destination_b | (u64{destination} << 3) |
+                     (u64{temporary} << 12) | (u64{7} << 29) | (u64{accumulate & 7} << 39) |
+                     (u64{accumulate >> 3} << 42) | (u64{ex_combine} << 45));
+                restore_predicate(1U << temporary);
                 break;
             }
             const u32 a = operand(0, floating), b = operand(1, floating);

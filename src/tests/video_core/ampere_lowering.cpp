@@ -193,4 +193,47 @@ TEST_CASE("Ampere programs go on past an EXIT that a branch jumps over", "[video
     REQUIRE(static_cast<bool>(lowered));
     REQUIRE(lowered.source_size == sizeof(code));
 }
+
+TEST_CASE("Ocarina UIMAD.WIDE.U32 with an immediate writes the uniform pair", "[video_core][ampere]") {
+    // UIMAD.WIDE.U32 UR4, UR6, 0x88888889, URZ (0400486024DEC000 compute): a divide by 15.
+    const auto lowered = LowerToMaxwell(
+        std::array{Instruction{{0x060478a5, 0x88888889, 0x0f8e003f, 0x000fc400}}, EXIT});
+    INFO(lowered.error);
+    REQUIRE(static_cast<bool>(lowered));
+    // UR4 and UR5 live in R220 and R221; the immediate goes through scratch R248.
+    size_t low = 0, high = 0;
+    for (const u64 word : lowered.instructions) {
+        if ((word >> 52) != 0x5c1) continue;
+        low += (word & 0xff) == 220;
+        high += (word & 0xff) == 221;
+    }
+    CHECK(low == 1);
+    CHECK(high == 1);
+    CHECK(CountMaxwell(lowered, 0x0100000000000000ULL >> 52, 52) >= 1);
+}
+
+TEST_CASE("Ocarina ISETP.EX combines with an input predicate other than PT", "[video_core][ampere]") {
+    // ISETP.NE.U32.AND.EX P1, PT, R0, UR9, P1, P2 (0400486024DEC000): P1 = (hi != OR P2) AND P1.
+    const auto lowered = LowerToMaxwell(
+        std::array{Instruction{{0xff007c0c, 0x00000009, 0x08f25120, 0x000fe400}}, EXIT});
+    INFO(lowered.error);
+    REQUIRE(static_cast<bool>(lowered));
+    // ISETP.NE into the free temporary P0, OR the low words' P2.
+    const u64 isetp = FindMaxwell(lowered, 0x5b6, 52);
+    REQUIRE(isetp != 0);
+    CHECK(((isetp >> 3) & 7) == 0);
+    CHECK(((isetp >> 39) & 7) == 2);
+    CHECK(((isetp >> 45) & 3) == 1);
+    CHECK(((isetp >> 49) & 7) == 5);
+    // PSETP P1 = P0 AND P1, the original predicate saved and restored around it.
+    const u64 psetp = FindMaxwell(lowered, 0x509, 52);
+    REQUIRE(psetp != 0);
+    CHECK(((psetp >> 3) & 7) == 1);
+    CHECK(((psetp >> 12) & 7) == 0);
+    CHECK(((psetp >> 39) & 7) == 1);
+    CHECK(((psetp >> 45) & 3) == 0);
+    CHECK(CountMaxwell(lowered, 0x38e8000000070000ULL >> 44, 44) == 1);
+    CHECK(CountMaxwell(lowered, 0x38f0000000070000ULL >> 44, 44) == 1);
+}
+
 } // namespace
