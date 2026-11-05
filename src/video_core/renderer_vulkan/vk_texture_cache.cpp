@@ -1249,7 +1249,10 @@ TextureCacheRuntime::TextureCacheRuntime(const Device& device_, Scheduler& sched
     }
     for (size_t index_a = 0; index_a < VideoCore::Surface::MaxPixelFormat; index_a++) {
         const auto image_format = static_cast<PixelFormat>(index_a);
-        if (IsPixelFormatASTC(image_format) && !device.IsOptimalAstcSupported()) {
+        // The GPU decoder's RGBA8 view is compatible only with uncompressed host images.
+        // Recompressed ASTC uses BC1/BC3 images, which cannot have an RGBA8 view.
+        if (IsPixelFormatASTC(image_format) && !device.IsOptimalAstcSupported() &&
+            Settings::GetAstcRecompression() == Settings::AstcRecompression::Uncompressed) {
             view_formats[index_a].push_back(VK_FORMAT_A8B8G8R8_UNORM_PACK32);
         }
         for (size_t index_b = 0; index_b < VideoCore::Surface::MaxPixelFormat; index_b++) {
@@ -2563,8 +2566,9 @@ void TextureCacheRuntime::TickFrame() {
 namespace {
 
 // The host image of a texture; unbacked images are created without memory (see MakeImage).
+// Return the trimmed mip origin to the image so its views and uploads use the host's levels.
 [[nodiscard]] vk::Image MakeHostImage(TextureCacheRuntime& runtime, const ImageInfo& info,
-                                      u32 host_level_offset, GPUVAddr gpu_addr, bool backed) {
+                                      u32& host_level_offset, GPUVAddr gpu_addr, bool backed) {
     const Device& device = runtime.device;
     const bool sparse_tiles = !backed && UsesSparseTiles(device, info, gpu_addr);
     return MakeImage(
