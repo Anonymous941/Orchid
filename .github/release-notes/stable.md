@@ -2,49 +2,52 @@
 > ## Report crashes from inside Orchid
 > If a game crashes, start Orchid again and pick **Help > Report a Crash on GitHub**. It opens a bug report with your build, system, GPU and driver and the end of the crash log already filled in, and opens the log folder so you can attach the full log of the crashed run. Please use it for every crash: reports with a log get fixed much faster, and reports without one are closed.
 
-## What's new in 0.7.4
+## What's new in 0.7.5
 
-0.7.4 corrects invalid Vulkan operations found while investigating Kirby Air Riders and
-expands native shader pointer tracking. Shader caches rebuild once because the pointer tracking
-change records additional shader information.
+0.7.5 adds shader and buffer safety corrections, more native instruction support, and AV1
+decoding to the Windows PGO package. The fixes ported from Eglantine and its forks retain their
+source credits in the commits.
 
-### Vulkan stability
+### Graphics and shader stability
 
-- ASTC textures recompressed to BC1 or BC3 no longer request incompatible RGBA8 image views.
-- Large textures that keep only their smaller mip levels retain the correct host mip offset,
-  so views, barriers and uploads stay within the allocated image.
-- Query-buffer copies no longer write overlapping destination regions in one command. When
-  queries update the same address, the last value is retained.
-- Dynamic vertex strides are declared alongside dynamic vertex input, matching the buffer
-  binding commands.
+- Shader metadata invalidated by the CPU stays alive until renderer bindings have been cleared,
+  avoiding stale ShaderInfo pointers during shader refresh.
+- Live texture descriptor reads are checked against the pool bounds before guest memory is read.
+- Native compute buffers use their mapped extent, including supported fragmented mappings,
+  rather than treating a neighbouring shader parameter as a buffer size.
+- Routed native loads, stores and atomics check the complete descriptor range before narrowing
+  their offsets to 32 bits.
+- Native 32-bit compare-and-swap atomics and additional carry, shift and reduction instruction
+  forms are supported. High data registers and uniform reduction addresses are preserved.
+- Signed-add overflow handling and AMD demote reordering around nested returns are corrected.
+- Texture uploads can be deferred when a render-target clear will overwrite them; scissor
+  checks preserve uploads needed outside the cleared area.
 
-The invalid Vulkan calls were reproduced in Kirby Air Riders on Linux/RADV and were absent from
-the patched validation runs. The reported Windows/NVIDIA menu crash still needs confirmation;
-issue #19 remains open.
+### Windows video decoding
 
-### Ocarina of Time
+- The Windows PGO build now ships FFmpeg with an AV1 decoder. CI checks that the decoder opens
+  and includes its runtime DLL dependencies. This addresses the missing-decoder error reported
+  with Ocarina of Time videos in issue #28.
 
-- Trees, bushes, vines and the grass draw again. The game culls its vegetation on the GPU and
-  reads it through loaded pointers and pointer tables, which native storage-buffer tracking now
-  follows. Switch 1 games keep the previous tracking. Ported from zortos293/Eglantine (Duck912,
-  Jonas, zortos293), with credits and source commits recorded in commit 812a4e1eb.
+### System and interface
 
-### Interface
+- Long event-wait deadlines saturate instead of overflowing on non-Windows hosts.
+- Stored callbacks own their callable objects, avoiding dangling references to the source.
+- The Ocarina of Time 30 FPS preset states that its built-in patch supports specific game builds.
 
-- The frame-generation toggle is available in Graphics settings again.
+### Confirmed from 0.7.4
 
-### System
-
-- Native (Switch 2) GPU report timestamps use the nanosecond time base nvdrv returns; Maxwell's
-  tick scaling is unchanged (ported from zortos293/Eglantine, Zortos).
-- A 64-bit address arbiter read at the top of the address space is rejected instead of wrapping
-  to zero (based on frenziedcoder's fix in TheusSales/lichii-m5s).
-- A GPU timeline wait that loses the device now still writes a crash dump (issue #16).
+- Arionic confirmed that the Kirby Air Riders title-screen crash is fixed in 0.7.4; issue #19 is
+  closed. Its Vulkan texture/query corrections remain included in 0.7.5.
 
 ### Known issues
 
 - **Kirby Air Riders:** characters and lighting can still render incorrectly, and some compute
-  shaders are still unsupported. The NVIDIA device-loss report is awaiting a tester's result.
+  shaders are still unsupported.
+- **DLSS ghosting:** the native buffer changes address an identified sizing problem; the reported
+  ghosting cause and a game-level fix remain unconfirmed (issue #27).
+- **Ocarina of Time video backgrounds:** the AV1 packaging correction does not establish the
+  cause of every black-background report (issue #28).
 - **Ocarina of Time:** the exposure/fog adjustment remains a visual workaround and also thins fog
   in interiors. `EDEN_NX2_OOT_VISUAL_WORKAROUND=0` disables it.
 - **Mario Tennis Fever on NVIDIA:** the GPU can be lost when a match starts (Windows, RTX 30
