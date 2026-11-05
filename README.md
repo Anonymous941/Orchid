@@ -168,6 +168,7 @@ source and author in its message.
   overwritten by a clear, adapted with framebuffer render-area, transformed-scissor,
   linear-attachment and zero-layer guards from
   [27226d2568c99c70cf78aa37adaf98b60457b2e5](https://github.com/zortos293/Eglantine/commit/27226d2568c99c70cf78aa37adaf98b60457b2e5).
+  Paulo Tumabing: 32-bit global `ATOM.CAS`, adapted to Orchid's storage lowering and atomic routing.
 - [Djihads80/Eglantine](https://github.com/Djihads80/Eglantine) and its contributors: merged
   regularly. Idle staging buffers freed (Takoroka), the RangeSet empty-query guard (néo Luigi),
   test fixes (kraibse).
