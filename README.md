@@ -164,6 +164,9 @@ source and author in its message.
   Windows, GPU teardown order, buffer cache and query fixes, native Ampere nanosecond timestamps,
   the separate pipeline cache file names.
   Radu Ursache: no mesh pipelines without `VK_EXT_mesh_shader`.
+  Kaj (co-authored with Claude Opus 5.5): skip guest uploads for new render targets fully
+  overwritten by a clear, adapted with framebuffer render-area, linear-attachment and zero-layer guards from
+  [27226d2568c99c70cf78aa37adaf98b60457b2e5](https://github.com/zortos293/Eglantine/commit/27226d2568c99c70cf78aa37adaf98b60457b2e5).
 - [Djihads80/Eglantine](https://github.com/Djihads80/Eglantine) and its contributors: merged
   regularly. Idle staging buffers freed (Takoroka), the RangeSet empty-query guard (néo Luigi),
   test fixes (kraibse).
