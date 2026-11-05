@@ -202,6 +202,8 @@ source and author in its message.
   christianball123 (device index fallback), kdegonia-star (global atomic add) and Takoroka (ISETP.EX
   and UIMAD.WIDE lowering).
 - rdenno: the Mario Tennis Fever fixes in 0.5.1.
+- [Drizz1le/Lichii](https://github.com/Drizz1le/Lichii) (Inc0rporate, with Claude Opus 5.5):
+  count nested shader returns before reordering demotes for AMD drivers.
 
 ## License
 

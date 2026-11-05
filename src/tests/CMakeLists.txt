@@ -81,6 +81,7 @@ add_executable(tests
     video_core/ampere_geometry.cpp
     video_core/ampere_geometry_lowering.cpp
     video_core/geometry_layer_viewport_relative.cpp
+    video_core/demote_nested_returns.cpp
     video_core/ampere_geometry_exit.cpp
     video_core/ampere_uniform_lea.cpp
     video_core/ampere_compute_forms.cpp
@@ -90,6 +91,7 @@ add_executable(tests
     video_core/ampere_bindless_tex.cpp
     video_core/ampere_sured.cpp
     video_core/ampere_yoshi_surface.cpp
+    video_core/ampere_yoshi_shift.cpp
     video_core/ampere_release_guards.cpp
     video_core/ampere_release_f2i.cpp
     video_core/ampere_uniform_immediate_shift.cpp

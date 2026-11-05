@@ -1357,6 +1357,15 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                               : opcode == 0xc19 ? uniform_register(insn.Bits(32, 8))
                                                 : insn.Bits(32, 8);
             const bool right = insn.Bits(76, 1) != 0, high_result = insn.Bits(80, 1) != 0;
+            // SHF.L.W.U32.HI Rd, RZ, c[bank][offset], Rc: the upper word of
+            // (Rc:0) << (count & 31) is Rc << (count & 31).
+            if (opcode == 0xa19 && !right && high_result && low == 255 && insn.Bits(73, 2) == 3 &&
+                insn.Bits(75, 1) && !insn.Bits(62, 2) && insn.Bits(54, 5) < 18 && valid_cbuf() &&
+                (insn.words[2] & ~0x000108ffU) == 0x00000600U && !(insn.words[3] & 0xc00001ffU)) {
+                emit(base(0x5c48000000000000ULL) | (u64{high} << 8) | (u64{shift} << 20) |
+                     (u64{1} << 39));
+                break;
+            }
             // SHF.R.U32 of the low word with a zero high word: a plain logical right shift.
             if (right && !high_result && high == 255 && insn.Bits(73, 2) == 3 && shift != ~0U &&
                 (opcode == 0xa19 || insn.words[1] <= 255) &&
@@ -3601,9 +3610,13 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 break;
             }
             if (insn.Bits(74, 1) && !insn.Bits(72, 2)) {
-                // IADD3.X R, a, b, [-]c, P: a + b + c and the carry predicate of a previous add.
-                // Carry outputs and a second carry input are not lowered (a + b + c + P can carry twice).
-                if (insn.Bits(81, 3) != 7 || insn.Bits(84, 3) != 7 || insn.Bits(77, 4) != 15)
+                // With no carry outputs, both predicate inputs are ordinary 0/1 addends.
+                // Keep unverified uniform-predicate and modified two-carry forms rejected.
+                const bool second_carry = insn.Bits(77, 4) != 15;
+                if (insn.Bits(81, 3) != 7 || insn.Bits(84, 3) != 7 ||
+                    (second_carry && (rewritten_uniform ||
+                        (opcode != 0x210 && opcode != 0xc10) ||
+                        (insn.words[1] & ~0xffU) || insn.Bits(62, 2) || insn.Bits(75, 1))))
                     return fail(index, "native integer carry mode");
                 const u32 a = insn.Bits(24, 8), c = insn.Bits(64, 8);
                 const u32 b = opcode == 0x210 ? insn.Bits(32, 8) : operand(1, false);
@@ -3612,6 +3625,10 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                      (u64{insn.Bits(75, 1)} << 48));
                 carry_value(insn.Bits(87, 3), insn.Bits(90, 1));
                 emit(base(0x5c10000000000000ULL) | (u64{251} << 8) | (u64{253} << 20));
+                if (second_carry) {
+                    carry_value(insn.Bits(77, 3), insn.Bits(80, 1));
+                    emit(base(0x5c10000000000000ULL) | (dest << 8) | (u64{253} << 20));
+                }
                 break;
             }
             if (opcode == 0xa10 && insn.Bits(81, 3) != 7) {
