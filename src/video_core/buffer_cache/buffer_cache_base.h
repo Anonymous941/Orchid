@@ -95,6 +95,8 @@ struct Binding {
     GPUVAddr gpu_addr{};
     u32 size{};
     BufferId buffer_id;
+    // Nonzero when a virtual storage range needs a shorter physical fallback.
+    u32 physical_size{};
     u32 segment_first{};
     u32 segment_count{};
 };
@@ -600,7 +602,8 @@ private:
     void DeleteBuffer(BufferId buffer_id, bool do_not_mark = false);
 
     [[nodiscard]] Binding StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
-                                               bool is_written, bool table_pointer = false) const;
+                                               bool is_written, bool table_pointer = false,
+                                               bool native_compute = false) const;
 
     [[nodiscard]] TextureBufferBinding GetTextureBufferBinding(GPUVAddr gpu_addr, u32 size,
                                                                PixelFormat format);
