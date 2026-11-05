@@ -460,7 +460,7 @@ std::shared_ptr<const LoweredNativeCode> GenericEnvironment::LowerNativeCode(u32
     auto lowered = Shader::Ampere::LowerToMaxwell(native, stage == Shader::Stage::Geometry,
                                                   support_cooperative_matrix &&
                                                       stage == Shader::Stage::Compute,
-                                                  tessellation);
+                                                  tessellation, /*compact_matrix=*/true);
     // Upstream's lowering covers forms for games without dumps here; it does not know Orchid's
     // geometry and tessellation stage rules, so those programs stay with ours.
     if (!lowered && stage != Shader::Stage::Geometry &&

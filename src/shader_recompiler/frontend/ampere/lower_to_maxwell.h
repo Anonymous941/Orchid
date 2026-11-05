@@ -41,9 +41,12 @@ enum class TessellationStage { None, Control, Evaluation };
 // Lower only operations whose semantics are representable by the existing
 // Maxwell frontend. These are new instructions, not reinterpretations of the
 // native bytes. Scheduling/control words are added by the environment adapter.
+// compact_matrix lowers each HMMA to one TENSOR_MUL_ADD the SPIR-V backend expands (a shared
+// helper); without it, HMMA expands to plain Maxwell instructions any backend can translate.
 inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geometry_stage = false,
                                      bool support_cooperative_matrix = false,
-                                     TessellationStage tessellation = TessellationStage::None) {
+                                     TessellationStage tessellation = TessellationStage::None,
+                                     bool compact_matrix = false) {
     const bool tessellation_stage = tessellation != TessellationStage::None;
     LoweredProgram result;
     struct Relocation { u32 output_index; s64 target; bool call = false; u32 output_target = ~0U; };
@@ -1480,7 +1483,7 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             emit(0x5c18000000000000ULL | predicate | dest | (u64{248} << 8) | (u64{247} << 20) | (u64{16} << 39));
             break;
         }
-        case 0x23c: { // HMMA.16816.F16: D(16x8) = A(16x16) * B(16x8) + C, f16 fragments.
+        case 0x23c: { // HMMA.1688/.16816.F16: D(16x8) = A(16xK) * B(Kx8) + C, f16 fragments.
             const char* env_mode = std::getenv("EDEN_NX2_TENSOR");
             const std::string_view mode = env_mode ? env_mode : "";
             const u32 a = insn.Bits(24, 8), b = insn.Bits(32, 8), c = insn.Bits(64, 8);
@@ -1494,8 +1497,74 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 }
                 break;
             }
-            if (mode != "fast" || !support_cooperative_matrix)
-                return fail(index, "native matrix multiply cooperative path unavailable");
+            // Bit 75 selects K=16 (.16816); the cooperative path below only models that shape.
+            const u32 depth = (insn.words[2] & ~0xffU) == 0x800 ? 16U : 8U;
+            if (mode != "fast" || !support_cooperative_matrix || depth != 16) {
+                // Software HMMA, ported from Lichii 62bc7538b (zortos293): no tensor extension.
+                const u32 a_count = depth / 4, b_count = depth / 8;
+                const u32 limit = uses_uniform_bank ? 216U : 246U;
+                if (native_predicate != 7 || (insn.words[2] & ~0xffU & ~0x800U) ||
+                    (insn.words[3] & 0xc00001ffU) || dest % 2 || dest + 2 > limit ||
+                    a % a_count || a + a_count > limit || b % b_count || b + b_count > limit ||
+                    (c != 255 && (c % 2 || c + 2 > limit)))
+                    return fail(index, "native half matrix multiply mode");
+                if (compact_matrix) {
+                    // One TENSOR_MUL_ADD that the SPIR-V backend turns into a call to a shared
+                    // subgroup-shuffle loop, instead of hundreds of instructions per HMMA site.
+                    // Bit 48 tags software; bit 49 selects K=8 rather than K=16.
+                    emit(0x5d30000000000000ULL | predicate | dest | (u64{a} << 8) |
+                         (u64{b} << 20) | (u64{c} << 39) | (u64{1} << 48) |
+                         (u64{depth == 8} << 49));
+                    break;
+                }
+                // Four f32 accumulators in R246..R249 and temporaries in R250..R254. Each product
+                // is summed with FFMA and the sums are rounded to half after every eight products.
+                const auto shuffle = [&](u32 target, u32 source, u32 lane) {
+                    emit(0xef10000000000000ULL | predicate | target | (u64{source} << 8) |
+                         (u64{lane} << 20) | (u64{1} << 29) | (u64{0x1f} << 34) | (u64{7} << 48));
+                };
+                const auto round_half = [&](u32 reg) {
+                    emit(0x5ca8000000000000ULL | predicate | reg | (u64{1} << 8) |
+                         (u64{2} << 10) | (u64{reg} << 20));
+                };
+                for (u32 row = 0; row < 2; ++row)
+                    for (u32 col = 0; col < 2; ++col)
+                        extract_half({c == 255 ? 255 : c + row, 0, false, false}, col, 246 + row * 2 + col);
+                for (u32 pair = 0; pair < depth / 2; ++pair) {
+                    emit(0xf0c8000000000000ULL | predicate | 250); // LaneId
+                    emit(0x0400000000000000ULL | predicate | 251 | (u64{250} << 8) | (u64{3} << 20));
+                    emit(0x3848000000000000ULL | predicate | 251 | (u64{251} << 8) | (u64{3} << 20));
+                    emit(0x0400000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{0x1c} << 20));
+                    mov_imm(254, pair & 3);
+                    for (u32 reg : {250U, 251U})
+                        emit(0x5c10000000000000ULL | predicate | reg | (u64{reg} << 8) | (u64{254} << 20));
+                    for (u32 row = 0; row < 2; ++row) {
+                        for (u32 half = 0; half < 2; ++half) {
+                            shuffle(252, a + (pair >= 4 ? 2 : 0) + row, 250);
+                            extract_half({252, 0, false, false}, half, 252);
+                            for (u32 col = 0; col < 2; ++col) {
+                                mov_imm(254, col * 4);
+                                emit(0x5c10000000000000ULL | predicate | 254 | (u64{251} << 8) | (u64{254} << 20));
+                                shuffle(253, b + pair / 4, 254);
+                                extract_half({253, 0, false, false}, half, 253);
+                                const u32 acc = 246 + row * 2 + col;
+                                emit(0x5980000000000000ULL | predicate | acc | (u64{252} << 8) |
+                                     (u64{253} << 20) | (u64{acc} << 39));
+                            }
+                        }
+                    }
+                    if ((pair & 3) == 3) {
+                        for (u32 reg = 246; reg < 250; ++reg) {
+                            round_half(reg);
+                            if (pair + 1 < depth / 2) extract_half({reg, 2, false, false}, 0, reg);
+                        }
+                    }
+                }
+                for (u32 row = 0; row < 2; ++row)
+                    emit(0x5c18000000000000ULL | predicate | (dest + row) |
+                         (u64{247 + row * 2} << 8) | (u64{246 + row * 2} << 20) | (u64{16} << 39));
+                break;
+            }
             if (insn.Bits(12, 4) != 7)
                 return fail(index, "native matrix multiply requires unconditional participation");
             const u32 register_limit = uses_uniform_bank ? 216U : 246U;

@@ -61,6 +61,7 @@ add_executable(tests
     video_core/vertex_repack.cpp
     video_core/shader_reuse_environment.cpp
     video_core/ampere_lowering.cpp
+    video_core/ampere_matrix.cpp
     video_core/ampere_returns.cpp
     video_core/ampere_f2i.cpp
     video_core/ampere_i2f64.cpp
