@@ -144,3 +144,25 @@ f314dc672 zortos293/Eglantine: shader-sweep cache format flag, tooling Orchid do
 5ad6c8501 anthonyloukinas/Lichii: same 256-slot query truncation as 015f76283
 47e1e9520 Kajcsi/Lichii: same 256-slot query truncation as 015f76283
 2aecf0e5a favoritul/Lichii: same 256-slot query truncation as 015f76283
+27226d256 zortos293/Eglantine: clear-overwritten guest upload is being ported to Orchid
+1122ab239 zortos293/Eglantine: clear-overwritten upload component included in port of 27226d256
+ebf388f07 zortos293/Eglantine: clear-overwritten upload follow-up included in port of 27226d256
+a6e5217c7 zortos293/Eglantine: 32-bit global ATOM.CAS is being ported to Orchid
+3e94f7fdc Vortex727/eglantine-zortos293: duplicate of global ATOM.CAS ported from a6e5217c7
+b7306e210 Vortex727/eglantine-zortos293: runtime routing/R254 follow-up adapted in Orchid's CAS port; keep Orchid's existing unmapped fallback
+7e1d64555 zortos293/Eglantine: gather mutex is inapplicable; Orchid FlushRegion does not use the invalidating gather path and no concurrent Gather caller was found; unrelated CLI restart
+77cbc3e7c zortos293/Eglantine: nested AMD demote-return fix already ported from Drizz1le commit 8bee51c11
+47c6ecdb5 pattex67/Aubepine: duplicate nested AMD demote-return fix already ported from Drizz1le commit 8bee51c11
+90e2d85bb zortos293/Eglantine: UMWAIT retry/timeout behavior already handled by Orchid Event::WaitFor
+219b60f06 pattex67/Aubepine: cache version bump unnecessary; Orchid rebuilds pipelines from cached guest environments
+5b89a3daf zortos293/Eglantine: standalone query pause can retain banks indefinitely; unsafe without bounded lifecycle
+dfd71f3ba zortos293/Eglantine: standalone query pause can retain banks indefinitely; unsafe without bounded lifecycle
+e093a5cd7 zortos293/Eglantine: standalone query pause can retain banks indefinitely; unsafe without bounded lifecycle
+de16a4de5 Vortex727/eglantine-zortos293: standalone query pause can retain banks indefinitely; unsafe without bounded lifecycle
+e44ee5c79 Vortex727/eglantine-zortos293: standalone query pause can retain banks indefinitely; unsafe without bounded lifecycle
+d7020c843 Vortex727/eglantine-zortos293: standalone query pause can retain banks indefinitely; unsafe without bounded lifecycle
+1f7978ec2 pattex67/Aubepine: standalone query pause can retain banks indefinitely; unsafe without bounded lifecycle
+caa4ca8d5 zortos293/Eglantine: 256-slot query cap truncates valid long queries without compaction
+d2ddd044b Vortex727/eglantine-zortos293: 256-slot query cap truncates valid long queries without compaction
+87203d593 Vortex727/eglantine-zortos293: 256-slot query cap truncates valid long queries without compaction
+936aca8d9 pattex67/Aubepine: 256-slot query cap truncates valid long queries without compaction
