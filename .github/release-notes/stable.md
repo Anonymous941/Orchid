@@ -39,6 +39,8 @@ source credits in the commits.
 
 - Arionic confirmed that the Kirby Air Riders title-screen crash is fixed in 0.7.4; issue #19 is
   closed. Its Vulkan texture/query corrections remain included in 0.7.5.
+- The reporter of Mario Tennis Fever issue #14 confirmed that matches load without crashing
+  on 0.7.4 in both uniform-buffer-reuse test configurations; that issue is also closed.
 
 ### Known issues
 
@@ -50,9 +52,6 @@ source credits in the commits.
   cause of every black-background report (issue #28).
 - **Ocarina of Time:** the exposure/fog adjustment remains a visual workaround and also thins fog
   in interiors. `EDEN_NX2_OOT_VISUAL_WORKAROUND=0` disables it.
-- **Mario Tennis Fever on NVIDIA:** the GPU can be lost when a match starts (Windows, RTX 30
-  series). We are still looking for the cause; until then, try switching the console mode to
-  **Docked** and tell us in issue #14 whether that helps.
 - See the performance and compatibility table in the README.
 
 The PGO profile is the same as in 0.6.2.
