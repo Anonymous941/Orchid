@@ -2915,6 +2915,15 @@ ImageId TextureCache<P>::JoinImages(const ImageInfo& info, GPUVAddr gpu_addr, DA
                 scissor.max_y < height) {
                 return false;
             }
+            using WindowOrigin = Tegra::Engines::Maxwell3D::Regs::WindowOrigin;
+            if (scissor.enable && regs.window_origin.mode != WindowOrigin::Mode::UpperLeft) {
+                // Vulkan flips Y around surface_clip.height, then clamps both bounds to zero.
+                // Require the transformed interval to start at zero and cover the new image.
+                const u32 clip_height = regs.surface_clip.height;
+                if (scissor.max_y < clip_height || clip_height - scissor.min_y < height) {
+                    return false;
+                }
+            }
         }
         // Bound attachments can further reduce the framebuffer's render area.
         for (u32 index = 0; index < regs.rt_control.count && index < NUM_RT; ++index) {
