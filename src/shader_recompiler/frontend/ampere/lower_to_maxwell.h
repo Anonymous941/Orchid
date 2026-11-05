@@ -67,7 +67,10 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
     };
     for (const auto& instruction : code) {
         const u32 op = instruction.Bits(0, 12);
-        uses_uniform_bank |= op == 0xd08 || op == 0xf66 || touches_uniform_bank(instruction);
+        // RED's uniform-address form must reserve the UR mirrors even when no other op uses URs.
+        const bool uniform_red = op == 0x98e && instruction.Bits(24, 8) == 255 &&
+                                 (instruction.words[2] & ~0x03800e3fU) == 0x0c10e100;
+        uses_uniform_bank |= op == 0xd08 || op == 0xf66 || touches_uniform_bank(instruction) || uniform_red;
     }
     const auto address_of = [](u32 index) { return 0x50U + index * 8 + ((index + 1) / 3) * 8; };
     const auto fail = [&](u32 index, std::string_view reason) {
