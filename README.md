@@ -24,6 +24,7 @@ Mario Tennis Fever first, plus the shader, kernel and graphics work other games 
 > or Eden developers, so please do not report them there.
 
 <p align="center">
+  <a href="#project-scope">Project scope</a> |
   <a href="#branches-and-builds">Branches and builds</a> |
   <a href="#what-orchid-adds">What Orchid adds</a> |
   <a href="#performance-and-compatibility">Performance</a> |
@@ -32,6 +33,22 @@ Mario Tennis Fever first, plus the shader, kernel and graphics work other games 
   <a href="#documentation">Documentation</a> |
   <a href="#license">License</a>
 </p>
+
+## Project scope
+
+Orchid is an independent, experimental Nintendo Switch 2 emulator based on Eglantine.
+The current focus is getting games to boot, render correctly and run more reliably, with
+Mario Tennis Fever as an initial priority and broader compatibility work driven by other games.
+
+- **Compatibility and correctness:** improve Switch 2 shader translation, graphics, kernel and
+  system emulation, and fix reproducible crashes and rendering issues.
+- **Performance:** improve emulation speed while checking stability and correctness; results
+  depend on the game, hardware and drivers.
+- **Desktop builds:** provide Linux and Windows releases, plus experimental macOS builds.
+
+Orchid is still a work in progress. Support for one game does not imply support for the full
+Switch 2 library. See [Performance and compatibility](#performance-and-compatibility) for the
+currently reported results and their test conditions.
 
 ## Branches and builds
 
