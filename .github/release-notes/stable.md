@@ -26,6 +26,17 @@ and native shader and buffer corrections collected since 0.7.5.
   view in Kirby's native edition while keeping the HUD and tiled image addressing intact.
 - LayeredFS mods also apply to NUP and other non-updatable RomFS sources.
 
+### Extracted edition folders
+
+- Folder loading and the game library recognize `upgrade/<id>/program/1/exefs`, with
+  program 1 preferred when complete. They fall back to program 0, then the existing
+  `updates/<version>/exefs`, `base/exefs` and direct ExeFS layouts.
+- Deep library scans show one entry for the selected edition instead of duplicate legacy
+  and native programs. The watched paths include the upgrade/program storage levels.
+- NUP packing uses the same program selection, retains the game folder's DLC, and reads
+  the native edition's `control/Acd_1` metadata. Legacy base/update code cannot overwrite
+  the selected native executable during packing.
+
 ### Graphics, shaders and settings
 
 - The graphics quality picker remembers settings per game and includes verified profiles

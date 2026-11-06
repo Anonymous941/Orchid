@@ -39,6 +39,7 @@ add_executable(tests
     core/ldn.cpp
     core/internal_network/socket_proxy.cpp
     core/nup_writer.cpp
+    core/loose_directory.cpp
     core/priority_queue.cpp
     core/vfs_vector.cpp
     core/internal_network/network.cpp
