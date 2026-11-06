@@ -2,56 +2,42 @@
 > ## Report crashes from inside Orchid
 > If a game crashes, start Orchid again and pick **Help > Report a Crash on GitHub**. It opens a bug report with your build, system, GPU and driver and the end of the crash log already filled in, and opens the log folder so you can attach the full log of the crashed run. Please use it for every crash: reports with a log get fixed much faster, and reports without one are closed.
 
-## What's new in 0.7.5
+## What's new in 0.8.0
 
-0.7.5 adds shader and buffer safety corrections, more native instruction support, and AV1
-decoding to the Windows PGO package. The fixes ported from Eglantine and its forks retain their
-source credits in the commits.
+0.8.0 adds DLC mounting for NUP containers, remembered per-game graphics profiles,
+and native shader and buffer corrections collected since 0.7.5.
 
-### Graphics and shader stability
+### NUP DLC support
 
-- Shader metadata invalidated by the CPU stays alive until renderer bindings have been cleared,
-  avoiding stale ShaderInfo pointers during shader refresh.
-- Live texture descriptor reads are checked against the pool bounds before guest memory is read.
-- Native compute buffers use their mapped extent, including supported fragmented mappings,
-  rather than treating a neighbouring shader parameter as a buffer size.
-- Routed native loads, stores and atomics check the complete descriptor range before narrowing
-  their offsets to 32 bits.
-- Native 32-bit compare-and-swap atomics and additional carry, shift and reduction instruction
-  forms are supported. High data registers and uniform reduction addresses are preserved.
-- Signed-add overflow handling and AMD demote reordering around nested returns are corrected.
-- Texture uploads can be deferred when a render-target clear will overwrite them; scissor
-  checks preserve uploads needed outside the cleared area.
+- Add-on RomFS packages embedded in a NUP are now registered with the DLC service and
+  can be opened by the game. Previously the loader recognized these packages but warned
+  that mounting was unsupported.
+- Only DLC belonging to the running application is exposed. When a container carries
+  several versions of a DLC, the newest usable RomFS is selected.
+- Newly packed NUP files preserve the DLC version from the dump directory instead of
+  writing every version as zero. Existing archives are left unchanged.
+- LayeredFS mods also apply to NUP and other non-updatable RomFS sources.
 
-### Windows video decoding
+### Graphics, shaders and settings
 
-- The Windows PGO build now ships FFmpeg with an AV1 decoder. CI checks that the decoder opens
-  and includes its runtime DLL dependencies. This addresses the missing-decoder error reported
-  with Ocarina of Time videos in issue #28.
+- The graphics quality picker remembers settings per game and includes verified profiles
+  for additional supported games, including the original Kirby and the Forgotten Land.
+- Native uniform shifts, carry/LEA sequences, packed conversions and local-memory
+  addressing handle additional captured instruction patterns.
+- Vulkan uniform reads follow the actual mapped segments of split buffers and preserve
+  holes in sparse backing. Buffer readback can span separate cached buffers.
+- Texture upload and vertex setup paths reduce redundant work. Custom graphics settings
+  survive global settings reloads.
+- Optional bounded diagnostics help attribute host stalls, frame hitches and unmapped
+  GPU reads without enabling those traces for normal play.
 
-### System and interface
+### Known limitations
 
-- Long event-wait deadlines saturate instead of overflowing on non-Windows hosts.
-- Stored callbacks own their callable objects, avoiding dangling references to the source.
-- The Ocarina of Time 30 FPS preset states that its built-in patch supports specific game builds.
+- Mounting a DLC package does not establish that its complete campaign is playable.
+- Older NUPs whose packer wrote every DLC version as zero cannot recover their original
+  version ordering automatically; repack from the original dump when needed.
+- Kirby Air Riders still has rendering and unsupported compute-shader issues.
+- Yoshi shader corrections do not establish full game compatibility.
+- See the performance and compatibility table in the README for game-specific status.
 
-### Confirmed from 0.7.4
-
-- Arionic confirmed that the Kirby Air Riders title-screen crash is fixed in 0.7.4; issue #19 is
-  closed. Its Vulkan texture/query corrections remain included in 0.7.5.
-- The reporter of Mario Tennis Fever issue #14 confirmed that matches load without crashing
-  on 0.7.4 in both uniform-buffer-reuse test configurations; that issue is also closed.
-
-### Known issues
-
-- **Kirby Air Riders:** characters and lighting can still render incorrectly, and some compute
-  shaders are still unsupported.
-- **DLSS ghosting:** the native buffer changes address an identified sizing problem; the reported
-  ghosting cause and a game-level fix remain unconfirmed (issue #27).
-- **Ocarina of Time video backgrounds:** the AV1 packaging correction does not establish the
-  cause of every black-background report (issue #28).
-- **Ocarina of Time:** the exposure/fog adjustment remains a visual workaround and also thins fog
-  in interiors. `EDEN_NX2_OOT_VISUAL_WORKAROUND=0` disables it.
-- See the performance and compatibility table in the README.
-
-The PGO profile is the same as in 0.6.2.
+The PGO profile is unchanged from 0.7.5. Ported fixes retain their source credits in the commits.
