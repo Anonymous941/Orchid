@@ -15,6 +15,7 @@
 
 #include "video_core/renderer_vulkan/pipeline_helper.h"
 #include "video_core/renderer_vulkan/pipeline_hitch_trace.h"
+#include "video_core/stall_diagnostics.h"
 
 #include "common/bit_field.h"
 #include "video_core/renderer_vulkan/maxwell_to_vk.h"
@@ -681,6 +682,9 @@ bool GraphicsPipeline::ConfigureDraw(const RescalingPushConstant& rescaling,
             PipelineHitchTrace::Scope hitch{PipelineHitchTrace::Phase::FirstUseWait,
                                             "graphics-first-use-wait", trace ? key.Hash() : 0,
                                             trace};
+            VideoCommon::StallDiagnostics::Scope diagnostic{
+                {VideoCommon::StallDiagnostics::Phase::PipelineBuildWait, "scheduler-worker",
+                 key.Hash()}};
             std::unique_lock lock{build_mutex};
             build_condvar.wait(lock, [this] { return is_built.load(std::memory_order::relaxed); });
         });
@@ -1206,6 +1210,8 @@ void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
     const bool trace = Common::HitchDiagnostic::Enabled();
     PipelineHitchTrace::Scope hitch{PipelineHitchTrace::Phase::DriverCreate,
                                     "graphics-driver-create", trace ? key.Hash() : 0, trace};
+    VideoCommon::StallDiagnostics::Scope diagnostic{
+        {VideoCommon::StallDiagnostics::Phase::GraphicsCreate, "graphics-build", key.Hash()}};
     pipeline = device.GetLogical().CreateGraphicsPipeline(graphics_ci, *pipeline_cache);
     hitch.Finish();
 

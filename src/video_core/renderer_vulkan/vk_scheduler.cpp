@@ -14,6 +14,7 @@
 #include <fmt/format.h>
 
 #include "video_core/renderer_vulkan/vk_query_cache.h"
+#include "video_core/stall_diagnostics.h"
 
 #include "common/settings.h"
 #include "video_core/renderer_vulkan/vk_hitch_diagnostic.h"
@@ -88,6 +89,8 @@ void Scheduler::WaitWorker() {
 
     // Ensure the queue is drained.
     {
+        VideoCommon::StallDiagnostics::Scope diagnostic{
+            {VideoCommon::StallDiagnostics::Phase::SchedulerQueueDrain, "scheduler-drain-caller"}};
         std::unique_lock ql{queue_mutex};
         event_cv.wait(ql, [this] { return work_queue.empty(); });
     }
@@ -96,6 +99,9 @@ void Scheduler::WaitWorker() {
     // Now wait for execution to finish. Release the execution lock before diagnostic logging.
     u64 end_ns = 0;
     {
+        VideoCommon::StallDiagnostics::Scope diagnostic{
+            {VideoCommon::StallDiagnostics::Phase::SchedulerExecutionAcquire,
+             "scheduler-drain-caller"}};
         std::scoped_lock el{execution_mutex};
         end_ns = trace ? Common::HitchDiagnostic::NowNs() : 0;
     }
@@ -381,7 +387,11 @@ void Scheduler::WorkerThread(std::stop_token stop_token) {
             // before executing.
             has_submit = work->HasSubmit();
             execute_begin_ns = trace ? Common::HitchDiagnostic::NowNs() : 0;
-            work->ExecuteAll(current_cmdbuf, current_upload_cmdbuf);
+            {
+                VideoCommon::StallDiagnostics::Scope diagnostic{
+                    {VideoCommon::StallDiagnostics::Phase::SchedulerChunk, "scheduler-worker"}};
+                work->ExecuteAll(current_cmdbuf, current_upload_cmdbuf);
+            }
             execute_end_ns = trace ? Common::HitchDiagnostic::NowNs() : 0;
 
             // If the chunk was a submission, reallocate the command buffer.
@@ -454,7 +464,14 @@ u64 Scheduler::SubmitExecution(VkSemaphore signal_semaphore, VkSemaphore wait_se
 
         const bool trace = Common::HitchDiagnostic::Enabled();
         const u64 mutex_begin_ns = trace ? Common::HitchDiagnostic::NowNs() : 0;
-        std::scoped_lock lock{submit_mutex};
+        std::unique_lock lock{submit_mutex, std::defer_lock};
+        {
+            VideoCommon::StallDiagnostics::Scope diagnostic{
+                {VideoCommon::StallDiagnostics::Phase::SubmitLockAcquire, "scheduler-worker", 0, 0,
+                 -1, signal_value}};
+            lock.lock();
+        }
+
         const u64 submit_begin_ns = trace ? Common::HitchDiagnostic::NowNs() : 0;
         VideoCommon::ReadbackDiagnostics::Scope diagnostic{
             VideoCommon::ReadbackDiagnostics::Event::Submit};

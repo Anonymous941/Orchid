@@ -79,8 +79,8 @@ private:
     const Device& device;             ///< Device.
     vk::Semaphore semaphore;          ///< Timeline semaphore.
     std::atomic<u64> gpu_tick{0};     ///< Current known GPU tick.
+    std::atomic<u64> diagnostic_submitted_tick{0}; // Last successful submit, diagnostic only.
     std::atomic<u64> current_tick{1}; ///< Current logical tick.
-    std::atomic<u64> diagnostic_submitted_tick{0};
     std::mutex wait_mutex;
     std::mutex free_mutex;
     std::condition_variable_any wait_cv;

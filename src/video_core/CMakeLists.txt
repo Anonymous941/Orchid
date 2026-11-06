@@ -256,6 +256,8 @@ add_library(video_core STATIC
     shader_handle_program.h
     shader_notify.cpp
     shader_notify.h
+    stall_diagnostics.cpp
+    stall_diagnostics.h
     smaa_area_tex.h
     smaa_search_tex.h
     surface.cpp
