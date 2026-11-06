@@ -514,6 +514,8 @@ private:
 
     void BindHostDrawIndirectBuffers();
 
+    void PrepareGraphicsUniformDownloads();
+
     void BindHostGraphicsUniformBuffers(size_t stage);
 
     void BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 binding_index, bool needs_bind);

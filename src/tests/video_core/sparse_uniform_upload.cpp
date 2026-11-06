@@ -446,9 +446,9 @@ TEST_CASE("Split legacy uniform banks gather actual device segments and download
     const auto bind = [&] {
         const auto segments = cache.SplitSegments(gpu, gpu.gpu, gpu.first, 0x10000, 0x10000);
         REQUIRE(segments.size() == 2);
-        REQUIRE(VideoCommon::StreamSplitUniformBank(
-            memory, segments,
-            [&](u64 address, u32) { return gpu_modified && address == gpu.second; },
+        cache.ClearPrepared();
+        REQUIRE(VideoCommon::PrepareSplitUniformBank(
+            segments, [&](u64 address, u32) { return gpu_modified && address == gpu.second; },
             [&](u64 address, u32 size) {
                 REQUIRE(address == gpu.second);
                 REQUIRE(size == SplitGpuMapping::SecondSize);
@@ -457,8 +457,10 @@ TEST_CASE("Split legacy uniform banks gather actual device segments and download
                 *memory.GetPointer<u8>(address) = 0x7e;
                 gpu_modified = false;
                 ++downloads;
-            },
-            [&](u32 size) {
+            }));
+        cache.SetPrepared(segments, 0, 0, 0);
+        REQUIRE(
+            VideoCommon::StreamSplitUniformBank(memory, cache.Prepared().segments, [&](u32 size) {
                 memory.events.emplace_back("allocate");
                 descriptor.assign(size, 0xa5);
                 return std::span<u8>{descriptor};
@@ -524,17 +526,18 @@ TEST_CASE("Malformed split uniform layouts cannot trigger downloads or partial d
     StrictSegmentMemory memory;
     size_t callbacks{};
     const auto attempt = [&](std::span<const VideoCommon::LegacyUniformSegment> segments) {
-        return VideoCommon::StreamSplitUniformBank(
-            memory, segments,
+        const bool prepared = VideoCommon::PrepareSplitUniformBank(
+            segments,
             [&](u64, u32) {
                 ++callbacks;
                 return true;
             },
-            [&](u64, u32) { ++callbacks; },
-            [&](u32) {
-                ++callbacks;
-                return std::span<u8>{};
-            });
+            [&](u64, u32) { ++callbacks; });
+        const bool streamed = VideoCommon::StreamSplitUniformBank(memory, segments, [&](u32) {
+            ++callbacks;
+            return std::span<u8>{};
+        });
+        return prepared || streamed;
     };
     const std::array short_bank{VideoCommon::LegacyUniformSegment{0x1000, 0x1000},
                                 VideoCommon::LegacyUniformSegment{0x9000, 0x1000}};
@@ -547,4 +550,64 @@ TEST_CASE("Malformed split uniform layouts cannot trigger downloads or partial d
     CHECK_FALSE(attempt(zero_segment));
     CHECK(callbacks == 0);
     CHECK(memory.events.empty());
+}
+
+TEST_CASE("All-stage split uniform preparation completes before any draw stream allocation",
+          "[video_core][sparse_uniform]") {
+    StrictSegmentMemory memory;
+    for (size_t page = 1; page <= 52; ++page) {
+        memory.Map(page, static_cast<int>(page));
+    }
+    std::array<SplitGpuMapping, 2> gpu;
+    gpu[1].gpu += 0x100000;
+    gpu[1].first = 0x11a00;
+    gpu[1].second = 0x31000;
+    std::array<VideoCommon::LegacyUniformEligibilityCache, 2> cache;
+    std::array<bool, 2> prior_gpu_written{true, true};
+    std::array<std::vector<u8>, 2> descriptors;
+    size_t allocations{};
+    // This models two stages. Complete both banks' readbacks before ordinary or split UBOs
+    // allocate anything, rather than preparing lazily when each individual bank is bound.
+    for (size_t stage = 0; stage < 2; ++stage) {
+        cache[stage].ClearPrepared();
+        const auto segments = cache[stage].SplitSegments(gpu[stage], gpu[stage].gpu,
+                                                         gpu[stage].first, 0x10000, 0x10000);
+        REQUIRE(VideoCommon::PrepareSplitUniformBank(
+            segments,
+            [&](u64 address, u32) {
+                return prior_gpu_written[stage] && address == gpu[stage].second;
+            },
+            [&](u64 address, u32) {
+                REQUIRE(allocations == 0); // Finish must precede even the earliest ordinary UBO.
+                memory.events.emplace_back("download" + std::to_string(stage));
+                *memory.GetPointer<u8>(address) = static_cast<u8>(0xe0 + stage);
+                prior_gpu_written[stage] = false;
+            }));
+        cache[stage].SetPrepared(segments, 1, 0, 0);
+    }
+    memory.events.emplace_back("ordinary-allocate");
+    ++allocations;
+    // A later GPU-layout query must not mutate the owning per-draw snapshot.
+    gpu[1].second = 0x41000;
+    ++gpu[1].generation;
+    REQUIRE(cache[1].SplitSegments(gpu[1], gpu[1].gpu, gpu[1].first, 0x10000, 0x10000).size() == 2);
+    for (size_t stage = 0; stage < 2; ++stage) {
+        // Storage bindings can now mark pending writes. Gathering cannot download these flags.
+        prior_gpu_written[stage] = true;
+        REQUIRE(VideoCommon::StreamSplitUniformBank(
+            memory, cache[stage].Prepared().segments, [&](u32 size) {
+                memory.events.emplace_back("split-allocate" + std::to_string(stage));
+                ++allocations;
+                descriptors[stage].assign(size, 0xa5);
+                return std::span<u8>{descriptors[stage]};
+            }));
+        CHECK(descriptors[stage][SplitGpuMapping::FirstSize] == static_cast<u8>(0xe0 + stage));
+    }
+    CHECK(memory.events == std::vector<std::string>{"download0", "download1", "ordinary-allocate",
+                                                    "split-allocate0", "read", "read",
+                                                    "split-allocate1", "read", "read"});
+    cache[0].ClearPrepared();
+    cache[1].ClearPrepared();
+    CHECK(cache[0].Prepared().segments.empty());
+    CHECK(cache[1].Prepared().segments.empty()); // No prior-draw/channel snapshot may be reused.
 }

@@ -84,13 +84,7 @@ struct LegacyUniformSegment {
     u32 size;
 };
 
-// Fully GPU-mapped banks may jump between device ranges. Resolve those ranges before allocating
-// the stream, download GPU-owned source bytes first, then use strict reads of the actual segments.
-// This must not interpret the unrelated linear tail after the first segment as sparse zero data.
-template <class Memory, class IsGpuModified, class Download, class Allocate>
-bool StreamSplitUniformBank(Memory& memory, std::span<const LegacyUniformSegment> segments,
-                            IsGpuModified&& is_gpu_modified, Download&& download,
-                            Allocate&& allocate) {
+inline bool IsCompleteSplitUniformBank(std::span<const LegacyUniformSegment> segments) {
     constexpr u32 bank_size = 0x10000;
     u32 total{};
     for (const auto& segment : segments) {
@@ -99,7 +93,15 @@ bool StreamSplitUniformBank(Memory& memory, std::span<const LegacyUniformSegment
         }
         total += segment.size;
     }
-    if (total != bank_size || segments.size() < 2) {
+    return total == bank_size && segments.size() >= 2;
+}
+
+// Run for ALL stages before allocating any per-draw stream/descriptor payload. Download may
+// finish a scheduler tick, which would retire already allocated, not-yet-consumed stream data.
+template <class IsGpuModified, class Download>
+bool PrepareSplitUniformBank(std::span<const LegacyUniformSegment> segments,
+                             IsGpuModified&& is_gpu_modified, Download&& download) {
+    if (!IsCompleteSplitUniformBank(segments)) {
         return false;
     }
     for (const auto& segment : segments) {
@@ -107,8 +109,18 @@ bool StreamSplitUniformBank(Memory& memory, std::span<const LegacyUniformSegment
             download(segment.device_address, segment.size);
         }
     }
-    // Download may finish a scheduler tick. Allocate afterwards so the stream belongs to the
-    // tick that will actually consume this descriptor, rather than an already submitted tick.
+    return true;
+}
+
+// Only allocate and strictly read the prepared actual device segments here. In particular,
+// this phase cannot download/Finish: earlier banks/stages may already have stream descriptors.
+template <class Memory, class Allocate>
+bool StreamSplitUniformBank(Memory& memory, std::span<const LegacyUniformSegment> segments,
+                            Allocate&& allocate) {
+    constexpr u32 bank_size = 0x10000;
+    if (!IsCompleteSplitUniformBank(segments)) {
+        return false;
+    }
     const std::span<u8> destination = allocate(bank_size);
     if (destination.size() < bank_size) {
         return false;
@@ -126,6 +138,31 @@ bool StreamSplitUniformBank(Memory& memory, std::span<const LegacyUniformSegment
 // moves. Descriptor-size checks stay outside the cache so a short bank can never reuse admission.
 class LegacyUniformEligibilityCache {
 public:
+    struct PreparedBank {
+        std::vector<LegacyUniformSegment> segments;
+        u32 downloaded_segments{};
+        u64 gpu_generation{};
+        s64 begin_ns{};
+        s64 end_ns{};
+    };
+
+    void ClearPrepared() {
+        prepared.segments.clear();
+    }
+
+    void SetPrepared(std::span<const LegacyUniformSegment> segments, u32 downloaded_segments,
+                     s64 begin_ns, s64 end_ns) {
+        prepared.segments.assign(segments.begin(), segments.end());
+        prepared.downloaded_segments = downloaded_segments;
+        prepared.gpu_generation = mapping_generation;
+        prepared.begin_ns = begin_ns;
+        prepared.end_ns = end_ns;
+    }
+
+    const PreparedBank& Prepared() const {
+        return prepared;
+    }
+
     template <class GpuMemory>
     bool IsEligible(GpuMemory& memory, u64 gpu_address, u64 device_address, u32 descriptor_size,
                     u32 shader_size) {
@@ -208,6 +245,7 @@ private:
     bool split_checked{};
     bool split_diagnostic_claimed{};
     std::vector<LegacyUniformSegment> split_segments;
+    PreparedBank prepared;
 };
 
 // Device mappings, unlike CPU writes, do not dirty retained buffer-cache bytes. Scan backing
