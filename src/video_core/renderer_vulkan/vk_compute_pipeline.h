@@ -63,6 +63,7 @@ private:
     DescriptorBufferRing& descriptor_buffer_ring;
     Shader::Info info;
     u64 shader_hash{};
+    s64 hitch_trace_queued_ns{};
     u32 num_descriptor_entries{};
 
     VideoCommon::ComputeUniformBufferSizes uniform_buffer_sizes{};

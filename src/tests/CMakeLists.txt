@@ -11,6 +11,7 @@ add_executable(tests
     common/event.cpp
     common/fibers.cpp
     common/game_presets.cpp
+    common/hitch_diagnostic.cpp
     common/host_memory.cpp
     common/host_memory_fallback.cpp
     common/page_table.cpp

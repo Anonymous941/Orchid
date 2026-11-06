@@ -12,6 +12,7 @@
 
 #include "shader_recompiler/exception.h"
 #include "video_core/renderer_vulkan/pipeline_helper.h"
+#include "video_core/renderer_vulkan/pipeline_hitch_trace.h"
 #include "video_core/renderer_vulkan/pipeline_statistics.h"
 #include "video_core/renderer_vulkan/vk_buffer_cache.h"
 #include "video_core/renderer_vulkan/vk_compute_pipeline.h"
@@ -91,6 +92,11 @@ ComputePipeline::ComputePipeline(const Device& device_, Scheduler& scheduler, vk
     }
 
     auto func{[this, shader_notify, pipeline_statistics] {
+        if (hitch_trace_queued_ns != 0) {
+            PipelineHitchTrace::Report(PipelineHitchTrace::Phase::BuildQueue, "compute-build-queue",
+                                       shader_hash, hitch_trace_queued_ns,
+                                       Common::HitchDiagnostic::NowNs());
+        }
         const VkPipelineShaderStageRequiredSubgroupSizeCreateInfoEXT subgroup_size_ci{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO_EXT,
             .pNext = nullptr,
@@ -128,7 +134,11 @@ ComputePipeline::ComputePipeline(const Device& device_, Scheduler& scheduler, vk
             .basePipelineIndex = 0,
         };
         try {
+            PipelineHitchTrace::Scope hitch{PipelineHitchTrace::Phase::DriverCreate,
+                                            "compute-driver-create", shader_hash,
+                                            Common::HitchDiagnostic::Enabled()};
             pipeline = device.GetLogical().CreateComputePipeline(compute_ci, *pipeline_cache);
+            hitch.Finish();
         } catch (const vk::Exception& exception) {
             LOG_CRITICAL(Render_Vulkan, "Adreno rejected compute shader {:016X}: {}", shader_hash,
                          exception.what());
@@ -162,6 +172,9 @@ ComputePipeline::ComputePipeline(const Device& device_, Scheduler& scheduler, vk
         }
     }};
     if (thread_worker) {
+        if (Common::HitchDiagnostic::Enabled()) {
+            hitch_trace_queued_ns = Common::HitchDiagnostic::NowNs();
+        }
         thread_worker->QueueWork(std::move(func));
     } else {
         func();
@@ -294,6 +307,9 @@ bool ComputePipeline::Configure(Tegra::Engines::KeplerCompute& kepler_compute,
     if (!is_built.load(std::memory_order::relaxed)) {
         // Wait for the pipeline to be built
         scheduler.Record([this](vk::CommandBuffer) {
+            PipelineHitchTrace::Scope hitch{PipelineHitchTrace::Phase::FirstUseWait,
+                                            "compute-first-use-wait", shader_hash,
+                                            Common::HitchDiagnostic::Enabled()};
             std::unique_lock lock{build_mutex};
             build_condvar.wait(lock, [this] { return is_built.load(std::memory_order::relaxed); });
         });

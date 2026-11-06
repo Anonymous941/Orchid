@@ -160,6 +160,7 @@ add_library(video_core STATIC
     renderer_vulkan/maxwell_to_vk.cpp
     renderer_vulkan/maxwell_to_vk.h
     renderer_vulkan/pipeline_helper.h
+    renderer_vulkan/pipeline_hitch_trace.h
     renderer_vulkan/pipeline_statistics.cpp
     renderer_vulkan/pipeline_statistics.h
     renderer_vulkan/renderer_vulkan.h
@@ -204,6 +205,8 @@ add_library(video_core STATIC
     renderer_vulkan/vk_resource_pool.h
     renderer_vulkan/vk_scheduler.cpp
     renderer_vulkan/vk_scheduler.h
+    renderer_vulkan/vk_hitch_diagnostic.h
+    renderer_vulkan/vk_hitch_diagnostic.h
     renderer_vulkan/vk_shader_reuse.cpp
     renderer_vulkan/vk_shader_reuse.h
     renderer_vulkan/vk_shader_util.cpp
