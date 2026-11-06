@@ -3503,6 +3503,22 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 emit(base(0x5c98000000000000ULL) | (u64{15} << 39) | (u64{250} << 20));
                 break;
             }
+            if (native_predicate == 7 && insn.words[1] == 10 &&
+                (insn.words[2] & ~0x008000ffU) == 0x080f0c00U &&
+                !(insn.words[3] & 0xc00001ffU) && insn.Bits(64, 8) != 255 &&
+                dest != 255 && b != ~0U) {
+                // High word of (Rc:Ra)<<1, plus UR10 and the preceding low-add carry.
+                emit(0x3828000000000000ULL | predicate | 250 |
+                     (u64{insn.Bits(24, 8)} << 8) | (u64{31} << 20));
+                emit(0x3848000000000000ULL | predicate | 251 |
+                     (u64{insn.Bits(64, 8)} << 8) | (u64{1} << 20));
+                emit(0x5c40000000000000ULL | predicate | 250 | (u64{250} << 8) |
+                     (u64{251} << 20) | (u64{1} << 41));
+                emit(0x5c10000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{b} << 20));
+                carry_value(insn.Bits(87, 3), 0);
+                emit(base(0x5c10000000000000ULL) | (u64{250} << 8) | (u64{253} << 20));
+                break;
+            }
             if (insn.Bits(80, 1) && !insn.Bits(72, 1) && !insn.Bits(62, 2) &&
                 insn.Bits(64, 8) == 255 && !(insn.words[1] & ~0xffU) && b != ~0U) {
                 // LEA.HI.X Rd, Ra, URb, RZ, s: the high word of Ra << s plus the uniform base.
