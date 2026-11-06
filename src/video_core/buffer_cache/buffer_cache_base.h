@@ -412,6 +412,7 @@ public:
     SparseUniformRefreshTracker native_indirect_uniform_refresh;
     LegacyUniformUploadTracker legacy_indirect_uniform_upload;
     u32 legacy_uniform_diagnostic_count{};
+    u32 legacy_uniform_gather_diagnostic_count{};
 
     /// EDEN_NX2_DRAW_TUNING=0 turns off the two per-draw shortcuts below.
     static bool Nx2DrawTuning() {
