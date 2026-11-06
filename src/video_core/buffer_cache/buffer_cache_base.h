@@ -139,6 +139,8 @@ public:
     Binding index_buffer;
     std::array<Binding, NUM_VERTEX_BUFFERS> vertex_buffers;
     std::array<std::array<Binding, NUM_GRAPHICS_UNIFORM_BUFFERS>, NUM_STAGES> uniform_buffers;
+    std::array<std::array<LegacyUniformEligibilityCache, NUM_GRAPHICS_UNIFORM_BUFFERS>, NUM_STAGES>
+        legacy_uniform_eligibility;
     std::array<std::array<Binding, NUM_STORAGE_BUFFERS>, NUM_STAGES> storage_buffers;
     std::array<std::array<TextureBufferBinding, NUM_TEXTURE_BUFFERS>, NUM_STAGES> texture_buffers;
     std::array<Binding, NUM_TRANSFORM_FEEDBACK_BUFFERS> transform_feedback_buffers;
@@ -408,6 +410,8 @@ public:
     Runtime& runtime;
     bool any_buffer_uploaded = false;
     SparseUniformRefreshTracker native_indirect_uniform_refresh;
+    LegacyUniformUploadTracker legacy_indirect_uniform_upload;
+    u32 legacy_uniform_diagnostic_count{};
 
     /// EDEN_NX2_DRAW_TUNING=0 turns off the two per-draw shortcuts below.
     static bool Nx2DrawTuning() {

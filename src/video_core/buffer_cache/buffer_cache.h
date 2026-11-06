@@ -14,6 +14,7 @@
 #include <vector>
 #include <fmt/ranges.h>
 
+#include "common/hitch_diagnostic.h"
 #include "common/range_sets.inc"
 #include "common/unmapped_read_diagnostic.h"
 #include "video_core/buffer_cache/buffer_cache_base.h"
@@ -426,6 +427,7 @@ void BufferCache<P>::BindGraphicsUniformBuffer(size_t stage, u32 index, GPUVAddr
     }
     const Binding binding{
         .device_addr = *device_addr,
+        .gpu_addr = gpu_addr,
         .size = size,
         .buffer_id = BufferId{},
     };
@@ -1164,20 +1166,68 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
             return alignment > 1 && (offset % alignment) != 0;
         }
     }();
-    const bool sparse_uniform = gpu_memory != nullptr && gpu_memory->UsesNativeTiling() &&
-                                (*channel_state->uniform_buffer_sizes)[stage][index] == 0x10000;
-    // Native programs indirectly read a full bank beside their code. Refresh the whole bank,
-    // including holes and mapped suffixes, so prior host bytes cannot survive an unmap. A remap
-    // can install backing without a CPU write notification, requiring another refresh this frame.
-    if (has_host_buffer && sparse_uniform && size != 0 &&
-        !memory_tracker.IsRegionGpuModified(device_addr, size) &&
-        native_indirect_uniform_refresh.NeedsRefresh(device_addr, size, frame_tick,
-                                                     device_memory.MappingGeneration())) {
-        memory_tracker.MarkRegionAsCpuModified(device_addr, size);
+    const u32 shader_size = (*channel_state->uniform_buffer_sizes)[stage][index];
+    const bool native_sparse_uniform =
+        gpu_memory != nullptr && gpu_memory->UsesNativeTiling() && shader_size == 0x10000;
+    const bool legacy_candidate = gpu_memory != nullptr && !gpu_memory->UsesNativeTiling() &&
+                                  device_addr != 0 && binding.size != 0 && shader_size == 0x10000;
+    const bool legacy_sparse_uniform =
+        legacy_candidate &&
+        channel_state->legacy_uniform_eligibility[stage][index].IsEligible(
+            *gpu_memory, binding.gpu_addr, device_addr, binding.size, shader_size);
+    const bool sparse_uniform = native_sparse_uniform || legacy_sparse_uniform;
+    const u64 mapping_generation =
+        sparse_uniform || (legacy_candidate && Common::HitchDiagnostic::Enabled())
+            ? device_memory.MappingGeneration()
+            : 0;
+    LegacyUniformUploadTracker::Bank* legacy_bank = nullptr;
+    if (legacy_sparse_uniform || (legacy_candidate && Common::HitchDiagnostic::Enabled())) {
+        legacy_bank =
+            &legacy_indirect_uniform_upload.Inspect(device_memory, device_addr, mapping_generation);
+        // Reserve most records for banks with backing holes; ordinary banks cannot exhaust the
+        // trace before the problematic bank appears later in a game's boot sequence.
+        if (Common::HitchDiagnostic::Enabled() && legacy_uniform_diagnostic_count < 32 &&
+            legacy_bank->diagnostic_generation != mapping_generation &&
+            (legacy_bank->hole_pages != 0 || legacy_uniform_diagnostic_count < 4)) {
+            legacy_bank->diagnostic_generation = mapping_generation;
+            ++legacy_uniform_diagnostic_count;
+            LOG_WARNING(Render,
+                        "LegacyUniformBank ns={} gpu=0x{:X} device=0x{:X} descriptor={} "
+                        "shader={} bound={} gpu_full_map={} gpu_continuous={} eligible={} "
+                        "policy={} mapped_pages={} hole_pages={} mapping_epoch={} gpu_epoch={}",
+                        Common::HitchDiagnostic::NowNs(), binding.gpu_addr, device_addr,
+                        binding.size, shader_size, size,
+                        gpu_memory->IsFullyMappedRange(binding.gpu_addr, size),
+                        gpu_memory->IsContinuousRange(binding.gpu_addr, size),
+                        legacy_sparse_uniform, legacy_sparse_uniform ? "sparse-uniform" : "strict",
+                        legacy_bank->mapped_pages, legacy_bank->hole_pages, mapping_generation,
+                        gpu_memory->GpuMappingGeneration());
+            if (legacy_uniform_diagnostic_count == 32) {
+                LOG_WARNING(Render, "LegacyUniformBank cap_reached=32");
+            }
+        }
     }
-    const bool use_fast_buffer = needs_alignment_stream
-        || (has_host_buffer && size <= channel_state->uniform_buffer_skip_cache_size
-            && !memory_tracker.IsRegionGpuModified(device_addr, size));
+    // Keep native programs' per-frame policy. Legacy banks refresh only after mapping changes
+    // and only if this device range has contained holes; normal CPU writes keep ordinary tracking.
+    // The new forced cache refresh excludes GPU-modified banks. Existing stream selection and
+    // upload range subtraction remain unchanged.
+    if (has_host_buffer && sparse_uniform && size != 0 &&
+        !memory_tracker.IsRegionGpuModified(device_addr, size)) {
+        const bool refresh = native_sparse_uniform
+                                 ? native_indirect_uniform_refresh.NeedsRefresh(
+                                       device_addr, size, frame_tick, mapping_generation)
+                                 : legacy_bank->NeedsRefresh(mapping_generation);
+        if (refresh) {
+            memory_tracker.MarkRegionAsCpuModified(device_addr, size);
+            if (legacy_bank != nullptr) {
+                legacy_bank->refreshed_generation = mapping_generation;
+            }
+        }
+    }
+    const bool use_fast_buffer =
+        needs_alignment_stream ||
+        (has_host_buffer && size <= channel_state->uniform_buffer_skip_cache_size &&
+         !memory_tracker.IsRegionGpuModified(device_addr, size));
     if (use_fast_buffer) {
         if constexpr (IS_OPENGL) {
             if (runtime.HasFastBufferSubData()) {
