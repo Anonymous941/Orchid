@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <memory>
 #include <vector>
 #include <catch2/catch_test_macros.hpp>
 #include "common/scope_exit.h"
@@ -111,27 +112,27 @@ TEST_CASE("BufferCache: readback spanning separate buffers", "[video_core][buffe
     auto asid = manager.RegisterProcess(&cpu);
     manager.Map(dev, guest, 3 * gap, asid);
     FixtureRuntime runtime;
-    VideoCommon::BufferCache<FixtureParams> cache(manager, runtime);
+    auto cache = std::make_unique<VideoCommon::BufferCache<FixtureParams>>(manager, runtime);
     auto* first =
         cache
-            .ObtainCPUBuffer(dev, gap, VideoCommon::ObtainBufferSynchronize::FullSynchronize,
-                             VideoCommon::ObtainBufferOperation::MarkAsWritten)
+            ->ObtainCPUBuffer(dev, gap, VideoCommon::ObtainBufferSynchronize::FullSynchronize,
+                              VideoCommon::ObtainBufferOperation::MarkAsWritten)
             .first;
     std::fill(first->bytes.begin(), first->bytes.end(), 0x31);
     auto* second = cache
-                       .ObtainCPUBuffer(dev + 2 * gap, gap,
-                                        VideoCommon::ObtainBufferSynchronize::FullSynchronize,
-                                        VideoCommon::ObtainBufferOperation::MarkAsWritten)
+                       ->ObtainCPUBuffer(dev + 2 * gap, gap,
+                                         VideoCommon::ObtainBufferSynchronize::FullSynchronize,
+                                         VideoCommon::ObtainBufferOperation::MarkAsWritten)
                        .first;
     std::fill(second->bytes.begin(), second->bytes.end(), 0x72);
     runtime.copied.clear();
-    REQUIRE(cache.IsRegionGpuModified(dev, gap));
-    REQUIRE(cache.IsRegionGpuModified(dev + 2 * gap, gap));
-    cache.DownloadMemory(dev + gap, gap);
+    REQUIRE(cache->IsRegionGpuModified(dev, gap));
+    REQUIRE(cache->IsRegionGpuModified(dev + 2 * gap, gap));
+    cache->DownloadMemory(dev + gap, gap);
     REQUIRE(runtime.copied.empty());
-    REQUIRE(cache.IsRegionGpuModified(dev, gap));
-    REQUIRE(cache.IsRegionGpuModified(dev + 2 * gap, gap));
-    cache.DownloadMemory(dev, 3 * gap);
+    REQUIRE(cache->IsRegionGpuModified(dev, gap));
+    REQUIRE(cache->IsRegionGpuModified(dev + 2 * gap, gap));
+    cache->DownloadMemory(dev, 3 * gap);
     CHECK_FALSE(runtime.out_of_bounds);
     const std::vector<std::pair<u64, u64>> expected{{dev, 0}, {dev + 2 * gap, 0}};
     CHECK(runtime.copied == expected);
@@ -140,6 +141,6 @@ TEST_CASE("BufferCache: readback spanning separate buffers", "[video_core][buffe
     manager.ReadBlockUnsafe(dev + 2 * gap, out2.data(), out2.size());
     CHECK(std::ranges::all_of(out1, [](u8 x) { return x == 0x31; }));
     CHECK(std::ranges::all_of(out2, [](u8 x) { return x == 0x72; }));
-    CHECK_FALSE(cache.IsRegionGpuModified(dev, gap));
-    CHECK_FALSE(cache.IsRegionGpuModified(dev + 2 * gap, gap));
+    CHECK_FALSE(cache->IsRegionGpuModified(dev, gap));
+    CHECK_FALSE(cache->IsRegionGpuModified(dev + 2 * gap, gap));
 }
