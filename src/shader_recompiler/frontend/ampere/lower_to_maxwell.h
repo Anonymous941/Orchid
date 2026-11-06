@@ -3492,6 +3492,17 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
         }
         case 0xc11: {
             const u32 b = uniform_register(insn.Bits(32, 8));
+            if (native_predicate == 7 && insn.words[1] == 11 &&
+                (insn.words[2] & ~0x00020000U) == 0x0f8008ffU &&
+                !(insn.words[3] & 0xc00001ffU) && dest != 255 && b != ~0U) {
+                // The upper shifted bits belong to LEA.HI.X, not to this low-add carry.
+                emit(0x5c18000000000000ULL | predicate | 250 |
+                     (u64{insn.Bits(24, 8)} << 8) | (u64{b} << 20) | (u64{1} << 39));
+                emit(0x5b60000000000000ULL | predicate | 7 | (u64{insn.Bits(81, 3)} << 3) |
+                     (u64{250} << 8) | (u64{b} << 20) | (u64{7} << 39) | (u64{1} << 49));
+                emit(base(0x5c98000000000000ULL) | (u64{15} << 39) | (u64{250} << 20));
+                break;
+            }
             if (insn.Bits(80, 1) && !insn.Bits(72, 1) && !insn.Bits(62, 2) &&
                 insn.Bits(64, 8) == 255 && !(insn.words[1] & ~0xffU) && b != ~0U) {
                 // LEA.HI.X Rd, Ra, URb, RZ, s: the high word of Ra << s plus the uniform base.
