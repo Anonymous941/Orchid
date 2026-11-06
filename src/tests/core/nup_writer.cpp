@@ -18,6 +18,7 @@
 
 #include "core/file_sys/nup_container.h"
 #include "core/file_sys/nup_writer.h"
+#include "core/file_sys/romfs.h"
 #include "core/file_sys/vfs/vfs_real.h"
 #include "core/file_sys/vfs/vfs_vector.h"
 
@@ -579,4 +580,34 @@ TEST_CASE("NUP probes the version from the game data list tag", "[nup]") {
     probed = FileSys::Nup::ProbeMetadata(root);
     REQUIRE(probed.display_version == "1.0.0");
     REQUIRE(probed.version_source == "base");
+}
+
+TEST_CASE("NUP exposes only the newest DLC RomFS for the running application", "[nup]") {
+    TempDir t;
+    const auto root = t.path / "Game";
+    MakeDump(root);
+    Put(root / "dlc/0400ABCD00011001/65536/romfs/addon.bin", "new addon");
+    Put(root / "dlc/0400ABCD00011002/0/romfs/second.bin", "second addon");
+    Put(root / "dlc/0400ABCD00021001/0/romfs/foreign.bin", "other game");
+    const auto archive = t.path / "Game.nup";
+    REQUIRE(FileSys::Nup::PackDump(root, archive, {}, {}, nullptr, nullptr) ==
+            FileSys::Nup::PackResult::Success);
+    FileSys::RealVfsFilesystem real;
+    std::vector<std::pair<u64, FileSys::VirtualFile>> addons;
+    {
+        NupContainer nup{real.OpenFile(archive.string(), FileSys::OpenMode::Read)};
+        REQUIRE(nup.GetStatus() == Loader::ResultStatus::Success);
+        addons = nup.GetAddonRomFS(TitleId);
+        REQUIRE(nup.GetAddonRomFS(0x0400ABCD00030000ULL).empty());
+    }
+    // Published RomFS files must retain their backing container after loader teardown.
+    REQUIRE(addons.size() == 2);
+    REQUIRE(addons[0].first == TitleId + 0x1001);
+    auto first = FileSys::ExtractRomFS(addons[0].second);
+    REQUIRE(first);
+    REQUIRE(Read(first->GetFile("addon.bin")) == "new addon");
+    REQUIRE(addons[1].first == TitleId + 0x1002);
+    auto second = FileSys::ExtractRomFS(addons[1].second);
+    REQUIRE(second);
+    REQUIRE(Read(second->GetFile("second.bin")) == "second addon");
 }
