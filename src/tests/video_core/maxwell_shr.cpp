@@ -88,6 +88,12 @@ u32 RunIR(const IR::Block& block, std::array<u32, 256>& regs, std::array<bool, 7
         case O::LogicalNot:
             result = !arg(inst.Arg(0));
             break;
+        case O::BitReverse32: {
+            const u32 input = arg(inst.Arg(0));
+            for (u32 bit = 0; bit < 32; ++bit)
+                result |= ((input >> bit) & 1U) << (31 - bit);
+            break;
+        }
         case O::BitwiseAnd32:
             result = arg(inst.Arg(0)) & arg(inst.Arg(1));
             break;
@@ -150,6 +156,37 @@ TEST_CASE("Maxwell SHR translator emits defined clamped IR", "[video_core][maxwe
                         CHECK(regs[dest] == expected);
                     }
 }
+TEST_CASE("Maxwell SHR preserves bit reverse and rejects CC/X modes", "[video_core][maxwell_shr]") {
+    ShiftEnvironment env;
+    for (const bool sign : {false, true})
+        for (const u32 count : {0U, 31U, 32U, 63U}) {
+            ObjectPool<IR::Inst> pool;
+            IR::Block block{pool};
+            Maxwell::TranslatorVisitor visitor{env, block};
+            const u64 insn = 0x5c28000000000000ULL | (7ULL << 16) | 20 | (21ULL << 8) |
+                             (22ULL << 20) | (1ULL << 40) | (u64{sign} << 48);
+            visitor.SHR_reg(insn);
+            std::array<u32, 256> regs{};
+            regs[21] = 1;
+            regs[22] = count;
+            std::array<bool, 7> preds{};
+            bool safe = true;
+            RunIR(block, regs, preds, safe);
+            const u32 expected = count >= 32 ? (sign ? 0xffffffffU : 0U)
+                                 : sign ? static_cast<u32>(static_cast<s32>(0x80000000U) >> count)
+                                        : 0x80000000U >> count;
+            CHECK(safe);
+            CHECK(regs[20] == expected);
+        }
+    for (const u64 bit : {43ULL, 47ULL}) {
+        ObjectPool<IR::Inst> pool;
+        IR::Block block{pool};
+        Maxwell::TranslatorVisitor visitor{env, block};
+        CHECK_THROWS_AS(visitor.SHR_reg(0x5c28000000000000ULL | (1ULL << bit)),
+                        Shader::NotImplementedException);
+    }
+}
+
 // Translate the actual P2R/R2P and SHR words emitted by the native lowerer. The conditional
 // execution of the SHR block models the Maxwell CFG's P6 edge; the instructions in each block
 // are produced by the production Maxwell translator, not a model of its SHR implementation.
