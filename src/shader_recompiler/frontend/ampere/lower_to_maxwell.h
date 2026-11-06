@@ -3512,8 +3512,10 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                      (u64{insn.Bits(24, 8)} << 8) | (u64{31} << 20));
                 emit(0x3848000000000000ULL | predicate | 251 |
                      (u64{insn.Bits(64, 8)} << 8) | (u64{1} << 20));
-                emit(0x5c40000000000000ULL | predicate | 250 | (u64{250} << 8) |
-                     (u64{251} << 20) | (u64{1} << 41));
+                // The shifted pieces occupy disjoint bits; IADD combines them without writing
+                // a predicate (the preceding low-add carry is still live).
+                emit(0x5c10000000000000ULL | predicate | 250 | (u64{250} << 8) |
+                     (u64{251} << 20));
                 emit(0x5c10000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{b} << 20));
                 carry_value(insn.Bits(87, 3), 0);
                 emit(base(0x5c10000000000000ULL) | (u64{250} << 8) | (u64{253} << 20));
