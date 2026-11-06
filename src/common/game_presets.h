@@ -50,6 +50,7 @@ inline constexpr u64 PokemonPokopiaProgramId = 0x0400A3A01EE4C000ULL;
 inline constexpr u64 StarFoxProgramId = 0x0400E88025B1A000ULL;
 inline constexpr u64 YoshiMysteriousBookProgramId = 0x0400245021D2C000ULL;
 inline constexpr u64 SuperMarioBrosWonderProgramId = 0x010015100B514000ULL;
+inline constexpr u64 KirbyForgottenLandProgramId = 0x01004D300C5AE000ULL;
 
 namespace Detail {
 inline auto SessionSetter(bool global) {
@@ -60,7 +61,7 @@ inline auto SessionSetter(bool global) {
 }
 
 /// Shared graphics baseline. Do not impose native GPU synchronization or clock settings here:
-/// Wonder uses the Switch 1 program layout and retains those preferences.
+/// Programs with the Switch 1 layout retain those preferences.
 inline void SetGraphicsBaseSettings(Values& settings, bool global) {
     const auto session = SessionSetter(global);
     session(settings.renderer_backend, RendererBackend::Vulkan);
@@ -121,6 +122,7 @@ inline constexpr GamePreset GamePresets[] = {
     {StarFoxProgramId, "Star Fox", Detail::SetSwitch2BaseSettings},
     {YoshiMysteriousBookProgramId, "Yoshi and the Mysterious Book", Detail::SetSwitch2BaseSettings},
     {SuperMarioBrosWonderProgramId, "Super Mario Bros. Wonder", Detail::SetGraphicsBaseSettings},
+    {KirbyForgottenLandProgramId, "Kirby and the Forgotten Land", Detail::SetGraphicsBaseSettings},
 };
 
 /// The title's preset, or nullptr when it has none.
