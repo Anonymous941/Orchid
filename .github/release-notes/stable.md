@@ -16,6 +16,11 @@ and native shader and buffer corrections collected since 0.7.5.
   several versions of a DLC, the newest usable RomFS is selected.
 - Newly packed NUP files preserve the DLC version from the dump directory instead of
   writing every version as zero. Existing archives are left unchanged.
+- Authentic NACP control metadata is preserved, including edition launch settings and legacy
+  DLC/save ownership. Native edition programs can use their original application's DLC IDs.
+  NUP title and version overrides remain separate from those control bytes.
+- The Switch 2 font-set request returns bounded descriptors into the built-in font memory.
+- Native presentation honors the vertical inversion flag used by Kirby's edition program.
 - LayeredFS mods also apply to NUP and other non-updatable RomFS sources.
 
 ### Graphics, shaders and settings
@@ -33,7 +38,12 @@ and native shader and buffer corrections collected since 0.7.5.
 
 ### Known limitations
 
-- Mounting a DLC package does not establish that its complete campaign is playable.
+- Native editions need their native executable as well as the DLC assets. A NUP containing
+  only the legacy executable cannot be turned into the native edition by mounting its DLC.
+- Kirby's native edition title screen and DLC delivery were verified with a complete local
+  program/data set. Star-Crossed World unlocks after clearing Natural Plains. Native gameplay
+  still has texture/sampler rendering errors and unsupported cooperative-matrix shaders;
+  the complete expansion has not been validated.
 - Older NUPs whose packer wrote every DLC version as zero cannot recover their original
   version ordering automatically; repack from the original dump when needed.
 - Kirby Air Riders still has rendering and unsupported compute-shader issues.
