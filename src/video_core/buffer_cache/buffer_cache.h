@@ -20,11 +20,12 @@
 #include "video_core/buffer_cache/buffer_cache_base.h"
 #include "video_core/buffer_cache/storage_buffer_size.h"
 #include "video_core/buffer_cache/uniform_stream_reuse.h"
+#include "video_core/cache_tracking_diagnostics.h"
+#include "video_core/compute_binding_diagnostic.h"
 #include "video_core/guest_memory.h"
 #include "video_core/host1x/gpu_device_memory_manager.h"
 #include "video_core/nx2.h"
 #include "video_core/nx2_profile.h"
-#include "video_core/cache_tracking_diagnostics.h"
 #include "video_core/texture_cache/util.h"
 
 namespace VideoCommon {
@@ -613,9 +614,26 @@ void BufferCache<P>::UnbindComputeStorageBuffers() {
 template <class P>
 void BufferCache<P>::BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index, u32 cbuf_offset,
                                               bool is_written) {
+    namespace diag = ComputeBindingDiagnostic;
+    auto* const trace = diag::current;
+    const bool matching =
+        trace && trace->phase == diag::Phase::Dispatch && cbuf_index == 0 && cbuf_offset == 0x50;
+    if (matching) {
+        if (trace->descriptor_seen) {
+            trace->duplicate_descriptor = true;
+        } else {
+            trace->descriptor_seen = true;
+            trace->descriptor_index = static_cast<u32>(ssbo_index);
+            trace->is_written = is_written;
+            trace->descriptor_indirect = false;
+            trace->binding_state = diag::BindingState::Descriptor;
+        }
+    }
     if (ssbo_index >= channel_state->compute_storage_buffers.size()) [[unlikely]] {
         LOG_ERROR(HW_GPU, "Storage buffer index {} exceeds maximum storage buffer count",
                   ssbo_index);
+        if (matching && !trace->duplicate_descriptor)
+            trace->binding_state = diag::BindingState::IndexOutOfRange;
         return;
     }
     const bool already_enabled =
@@ -627,6 +645,8 @@ void BufferCache<P>::BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index,
                 LOG_WARNING(HW_GPU,
                             "Skipping compute storage buffer {} due to driver limit {}",
                             ssbo_index, max_bindings);
+                if (matching && !trace->duplicate_descriptor)
+                    trace->binding_state = diag::BindingState::LimitSkipped;
                 return;
             }
         }
@@ -642,6 +662,8 @@ void BufferCache<P>::BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index,
     const auto& launch_desc = kepler_compute->launch_description;
     if (((launch_desc.const_buffer_enable_mask >> cbuf_index) & 1) == 0) {
         LOG_WARNING(HW_GPU, "Skipped binding SSBO: cbuf index {} is not enabled", cbuf_index);
+        if (matching && !trace->duplicate_descriptor)
+            trace->binding_state = diag::BindingState::Disabled;
         return;
     }
     ASSERT(((launch_desc.const_buffer_enable_mask >> cbuf_index) & 1) != 0);
@@ -650,7 +672,7 @@ void BufferCache<P>::BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index,
     const GPUVAddr ssbo_addr = cbufs[cbuf_index].Address() + cbuf_offset;
     channel_state->compute_storage_buffers[ssbo_index] =
         StorageBufferBinding(ssbo_addr, cbuf_index, is_written,
-                             kepler_compute->IsNativeMode());
+                             kepler_compute->IsNativeMode(), matching && !trace->duplicate_descriptor);
 }
 
 template <class P>
@@ -1610,10 +1632,15 @@ template <class P>
 void BufferCache<P>::BindHostComputeStorageBuffers() {
     u32 binding_index = 0;
     ForEachEnabledBit(channel_state->enabled_compute_storage_buffers, [&](u32 index) {
+        namespace diag = ComputeBindingDiagnostic;
+        auto* const trace = diag::current;
+        const bool matching = diag::IsTarget(index, 0, 0x50);
         Binding& binding = channel_state->compute_storage_buffers[index];
         const bool is_written =
             ((channel_state->written_compute_storage_buffers >> index) & 1) != 0;
         if (BindMultiRangeStorage(binding, is_written, compute_segments)) {
+            if (matching)
+                trace->binding_state = diag::BindingState::MultiRange;
             return;
         }
         const u32 size = binding.physical_size ? binding.physical_size : binding.size;
@@ -1629,6 +1656,15 @@ void BufferCache<P>::BindHostComputeStorageBuffers() {
 
         if (is_written) {
             MarkWrittenBuffer(binding.buffer_id, binding.device_addr, size, true);
+        }
+        if (matching && trace->binding_state == diag::BindingState::Descriptor) {
+            trace->binding_state = diag::BindingState::Normal;
+            if (binding.buffer_id)
+                trace->cache_buffer_id = binding.buffer_id.Value();
+            trace->descriptor_offset = offset;
+            trace->descriptor_range = size;
+            if constexpr (NEEDS_BIND_STORAGE_INDEX)
+                trace->descriptor_binding = binding_index;
         }
 
         if constexpr (NEEDS_BIND_STORAGE_INDEX) {
@@ -2830,15 +2866,24 @@ void BufferCache<P>::DeleteBuffer(BufferId buffer_id, bool do_not_mark) {
 
 template <class P>
 Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
-                                             bool is_written, bool native_compute) const {
+                                             bool is_written, bool native_compute,
+                                             bool diagnostic_target) const {
+    namespace diag = ComputeBindingDiagnostic;
+    auto* const trace = diagnostic_target ? diag::current : nullptr;
     const GPUVAddr gpu_addr = gpu_memory->Read<u64>(ssbo_addr);
+    if (trace)
+        trace->pointer = gpu_addr;
 
     if (gpu_addr == 0) {
+        if (trace)
+            trace->binding_state = diag::BindingState::NullPointer;
         return NULL_BINDING;
     }
 
     const auto size = [&]() -> u32 {
         const u64 layout_size = gpu_memory->GetMemoryLayoutSize(gpu_addr);
+        if (trace)
+            trace->layout_size = layout_size;
         // Keep the existing NVN/graphics behaviour; bare pointers must be capped before
         // conversion, since a kind range can be 4 GiB or larger.
         const u64 memory_layout_size =
@@ -2856,18 +2901,30 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
     // Alignment only applies to the offset of the buffer
     const u32 alignment = runtime.GetStorageBufferAlignment();
     const GPUVAddr aligned_gpu_addr = Common::AlignDown(gpu_addr, alignment);
+    if (trace) {
+        trace->selected_size = size;
+        trace->alignment = alignment;
+        trace->aligned_gpu = aligned_gpu_addr;
+    }
     const u32 aligned_size = static_cast<u32>(gpu_addr - aligned_gpu_addr) + size;
 
     const std::optional<DAddr> aligned_device_addr = gpu_memory->GpuToCpuAddress(aligned_gpu_addr);
     if (!aligned_device_addr || size == 0) {
         LOG_DEBUG(HW_GPU, "Failed to find storage buffer for cbuf index {}", cbuf_index);
+        if (trace)
+            trace->binding_state =
+                size == 0 ? diag::BindingState::EmptyRange : diag::BindingState::UnmappedAligned;
         return NULL_BINDING;
     }
     const std::optional<DAddr> device_addr = gpu_memory->GpuToCpuAddress(gpu_addr);
     if (!device_addr) {
         LOG_DEBUG(HW_GPU, "Unmapped storage buffer address for cbuf index {}", cbuf_index);
+        if (trace)
+            trace->binding_state = diag::BindingState::UnmappedPointer;
         return NULL_BINDING;
     }
+    if (trace)
+        trace->device_address = *device_addr;
     // The end address used for size calculation does not need to be aligned
     const DAddr cpu_end = Common::AlignUp(*device_addr + size, Core::DEVICE_PAGESIZE);
 
@@ -2880,7 +2937,13 @@ Binding BufferCache<P>::StorageBufferBinding(GPUVAddr ssbo_addr, u32 cbuf_index,
     const u32 physical_size = native_compute
         ? static_cast<u32>(gpu_memory->MaxContinuousRange(aligned_gpu_addr, binding_size))
         : 0;
+    if (trace) {
+        trace->logical_size = binding_size;
+        trace->physical_size = physical_size;
+    }
     if (native_compute && physical_size <= gpu_addr - aligned_gpu_addr) {
+        if (trace)
+            trace->binding_state = diag::BindingState::NoPhysicalPrefix;
         return NULL_BINDING;
     }
     const Binding binding{

@@ -29,6 +29,7 @@
 #include "shader_recompiler/frontend/maxwell/translate_program.h"
 #include "shader_recompiler/ir_opt/passes.h"
 #include "shader_recompiler/program_header.h"
+#include "video_core/compute_binding_diagnostic.h"
 #include "video_core/engines/kepler_compute.h"
 #include "video_core/engines/maxwell_3d.h"
 #include "video_core/gpu_logging/gpu_logging.h"
@@ -837,12 +838,14 @@ GraphicsPipeline* PipelineCache::CurrentGraphicsPipeline() {
     return CurrentGraphicsPipelineSlowPath();
 }
 
-ComputePipeline* PipelineCache::CurrentComputePipeline() {
+ComputePipeline* PipelineCache::CurrentComputePipeline(std::optional<u64>& diagnostic_key) {
 
     const ShaderInfo* const shader{ComputeShader()};
     if (!shader) {
         return nullptr;
     }
+    if (shader->lowered_native)
+        diagnostic_key = shader->lowered_native->diagnostic_native_key;
     const auto& qmd{kepler_compute->launch_description};
     const ComputePipelineCacheKey key{
         .unique_hash = shader->unique_hash,
@@ -1794,6 +1797,28 @@ std::unique_ptr<ComputePipeline> PipelineCache::CreateComputePipeline(
     };
     const GPUVAddr program_base{kepler_compute->regs.code_loc.Address()};
     const auto& qmd{kepler_compute->launch_description};
+    namespace diag = VideoCommon::ComputeBindingDiagnostic;
+    std::optional<diag::Record> trace;
+    std::optional<diag::Scope> trace_scope;
+    if (shader->lowered_native && diag::Matches(shader->lowered_native->diagnostic_native_key) &&
+        diag::compile_limit.Claim()) {
+        trace.emplace();
+        trace->phase = diag::Phase::Compile;
+        trace->native_key = *shader->lowered_native->diagnostic_native_key;
+        trace->shader_hash = key.unique_hash;
+        trace->serial = diag::sequence.fetch_add(1, std::memory_order_relaxed);
+        trace->program = program_base + qmd.program_start;
+        trace->cbuf_enabled = (qmd.const_buffer_enable_mask & 1) != 0;
+        if (trace->cbuf_enabled) {
+            trace->cbuf_base = qmd.const_buffer_config[0].Address();
+            trace->cbuf_size = qmd.const_buffer_config[0].size;
+        }
+        trace_scope.emplace(*trace);
+    }
+    SCOPE_EXIT {
+        if (trace_scope)
+            diag::Emit(*trace);
+    };
     ComputeEnvironment env{*kepler_compute, *gpu_memory, program_base, qmd.program_start,
                            shader->lowered_native, profile.support_cooperative_matrix};
     env.SetCachedSize(shader->size_bytes);

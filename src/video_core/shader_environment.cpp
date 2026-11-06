@@ -34,6 +34,7 @@
 #include "shader_recompiler/frontend/ampere/program_address_map.h"
 #include "shader_recompiler/frontend/ampere/program_capture.h"
 #include "shader_recompiler/frontend/ampere/program_override.h"
+#include "video_core/compute_binding_diagnostic.h"
 #include "video_core/engines/kepler_compute.h"
 #include "video_core/memory_manager.h"
 #include "video_core/shader_environment.h"
@@ -193,6 +194,7 @@ bool GenericEnvironment::IsNativeProgram() const {
 bool GenericEnvironment::IsCbufStorageBufferPointer(u32 index, u32 offset) {
     const u64 key = MakeCbufKey(index, offset);
     if (const auto it = storage_pointer_types.find(key); it != storage_pointer_types.end()) {
+        ComputeBindingDiagnostic::CompileMapping(index, offset, it->second != 0);
         return it->second != 0;
     }
     const u64 address = u64{ReadCbufValue(index, offset)} |
@@ -200,6 +202,7 @@ bool GenericEnvironment::IsCbufStorageBufferPointer(u32 index, u32 offset) {
     const bool mapped = address != 0 && gpu_memory->IsWithinGPUAddressRange(address) &&
                         gpu_memory->IsFullyMappedRange(address, 1);
     storage_pointer_types.emplace(key, static_cast<u8>(mapped));
+    ComputeBindingDiagnostic::CompileMapping(index, offset, mapped);
     return mapped;
 }
 
@@ -624,6 +627,9 @@ std::shared_ptr<const LoweredNativeCode> GenericEnvironment::LowerNativeCode(u32
             words[1], words[2], words[3]);
     }
     auto result = std::make_shared<LoweredNativeCode>();
+    if (native_header_size == 0 && ComputeBindingDiagnostic::Selector()) {
+        result->diagnostic_native_key = Shader::Ampere::NativeProgramKey(native);
+    }
     result->texture_bound = lowered.required_texture_buffer;
     result->surface_bound = lowered.required_surface_buffer;
     result->source_size = native_header_size + lowered.source_size;
@@ -993,6 +999,7 @@ u32 ComputeEnvironment::ReadCbufValue(u32 cbuf_index, u32 cbuf_offset) {
     u32 value{};
     if (cbuf_offset < cbuf.size) {
         value = gpu_memory->Read<u32>(cbuf.Address() + cbuf_offset);
+        ComputeBindingDiagnostic::CompileWord(cbuf_index, cbuf_offset, value);
     }
     cbuf_values.emplace(MakeCbufKey(cbuf_index, cbuf_offset), value);
     return value;

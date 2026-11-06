@@ -11,8 +11,10 @@
 #include <fmt/format.h>
 
 #include "common/logging.h"
+#include "common/scope_exit.h"
 #include "common/settings.h"
 #include "shader_recompiler/exception.h"
+#include "video_core/compute_binding_diagnostic.h"
 #include "video_core/gpu_logging/gpu_logging.h"
 #include "video_core/renderer_vulkan/pipeline_helper.h"
 #include "video_core/renderer_vulkan/pipeline_hitch_trace.h"
@@ -187,7 +189,30 @@ ComputePipeline::ComputePipeline(const Device& device_, Scheduler& scheduler, vk
 
 bool ComputePipeline::Configure(Tegra::Engines::KeplerCompute& kepler_compute,
                                 Tegra::MemoryManager& gpu_memory, Scheduler& scheduler,
-                                BufferCache& buffer_cache, TextureCache& texture_cache) {
+                                BufferCache& buffer_cache, TextureCache& texture_cache,
+                                std::optional<u64> diagnostic_key) {
+    namespace diag = VideoCommon::ComputeBindingDiagnostic;
+    std::optional<diag::Record> trace;
+    std::optional<diag::Scope> trace_scope;
+    if (diag::Matches(diagnostic_key) && diag::dispatch_limit.Claim()) {
+        const auto& qmd = kepler_compute.launch_description;
+        trace.emplace();
+        trace->phase = diag::Phase::Dispatch;
+        trace->native_key = *diagnostic_key;
+        trace->shader_hash = shader_hash;
+        trace->serial = diag::sequence.fetch_add(1, std::memory_order_relaxed);
+        trace->program = kepler_compute.regs.code_loc.Address() + qmd.program_start;
+        trace->cbuf_enabled = (qmd.const_buffer_enable_mask & 1) != 0;
+        if (trace->cbuf_enabled) {
+            trace->cbuf_base = qmd.const_buffer_config[0].Address();
+            trace->cbuf_size = qmd.const_buffer_config[0].size;
+        }
+        trace_scope.emplace(*trace);
+    }
+    SCOPE_EXIT {
+        if (trace_scope)
+            diag::Emit(*trace);
+    };
     guest_descriptor_queue.Acquire(scheduler, num_descriptor_entries, uses_descriptor_buffer);
 
     buffer_cache.SetComputeUniformBufferState(info.constant_buffer_mask, &uniform_buffer_sizes);
