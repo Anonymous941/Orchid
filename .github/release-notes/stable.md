@@ -21,6 +21,9 @@ and native shader and buffer corrections collected since 0.7.5.
   NUP title and version overrides remain separate from those control bytes.
 - The Switch 2 font-set request returns bounded descriptors into the built-in font memory.
 - Native presentation honors the vertical inversion flag used by Kirby's edition program.
+- The DLSS fallback uses active source/output rectangles from validated compact parameters
+  instead of stretching into the full texture allocation. This fixes the enlarged quarter-scene
+  view in Kirby's native edition while keeping the HUD and tiled image addressing intact.
 - LayeredFS mods also apply to NUP and other non-updatable RomFS sources.
 
 ### Graphics, shaders and settings
@@ -42,7 +45,7 @@ and native shader and buffer corrections collected since 0.7.5.
   only the legacy executable cannot be turned into the native edition by mounting its DLC.
 - Kirby's native edition title screen and DLC delivery were verified with a complete local
   program/data set. Star-Crossed World unlocks after clearing Natural Plains. Native gameplay
-  still has texture/sampler rendering errors and unsupported cooperative-matrix shaders;
+  still reports texture/sampler errors and uses an approximate upscale for unsupported DLSS networks;
   the complete expansion has not been validated.
 - Older NUPs whose packer wrote every DLC version as zero cannot recover their original
   version ordering automatically; repack from the original dump when needed.
