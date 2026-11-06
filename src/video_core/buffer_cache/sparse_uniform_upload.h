@@ -13,9 +13,9 @@
 
 namespace VideoCommon {
 
-// Native indirect uniform banks describe an upper bound, including device pages without backing.
-// Preserve that whole descriptor range: holes read zero, and mapped pages after holes still count.
-// Other buffer reads retain their strict unmapped-memory diagnostics.
+// Native banks and validated split legacy uniform segments may contain device pages without
+// backing. Preserve that whole descriptor range: holes read zero, and mapped pages after holes
+// still count. Other buffer reads retain their strict unmapped-memory diagnostics.
 template <class Memory>
 void ReadSparseUniformMemory(Memory& memory, u64 address, std::span<u8> destination) {
     static_assert(Memory::AS_BITS < 64);
@@ -65,7 +65,8 @@ struct SparseUniformReadView {
 
 // Linear-bank guard used to distinguish ordinary legacy bindings from the split gather path.
 // This checks GPU-to-device continuity, not host backing, and does not enable sparse/zero reads
-// for legacy buffers. Missing GPU mappings and stale retained translations stay on strict paths.
+// for ordinary legacy buffers. Missing GPU mappings and stale retained translations retain their
+// existing diagnostics; fully mapped split banks are read only through their actual segments.
 template <class GpuMemory>
 bool IsLegacySparseUniformBank(GpuMemory& memory, u64 gpu_address, u64 device_address,
                                u32 descriptor_size, u32 shader_size) {
@@ -112,8 +113,9 @@ bool PrepareSplitUniformBank(std::span<const LegacyUniformSegment> segments,
     return true;
 }
 
-// Only allocate and strictly read the prepared actual device segments here. In particular,
-// this phase cannot download/Finish: earlier banks/stages may already have stream descriptors.
+// Only allocate and read the prepared actual device segments here. Their backing holes read zero;
+// each later mapped segment still contributes its bytes. No linear device-bank range is inferred.
+// This phase cannot download/Finish: earlier banks/stages may already have stream descriptors.
 template <class Memory, class Allocate>
 bool StreamSplitUniformBank(Memory& memory, std::span<const LegacyUniformSegment> segments,
                             Allocate&& allocate) {
@@ -127,7 +129,8 @@ bool StreamSplitUniformBank(Memory& memory, std::span<const LegacyUniformSegment
     }
     u32 offset{};
     for (const auto& segment : segments) {
-        memory.ReadBlockUnsafe(segment.device_address, destination.data() + offset, segment.size);
+        ReadSparseUniformMemory(memory, segment.device_address,
+                                destination.subspan(offset, segment.size));
         offset += segment.size;
     }
     return true;

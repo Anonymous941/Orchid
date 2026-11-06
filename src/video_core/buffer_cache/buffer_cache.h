@@ -1224,7 +1224,7 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 
                                 "LegacyUniformGather begin_ns={} end_ns={} prepare_begin_ns={} "
                                 "prepare_end_ns={} gpu=0x{:X} descriptor={} bound={} segments={} "
                                 "first_device=0x{:X}+{} last_device=0x{:X}+{} "
-                                "gpu_download_segments={} gpu_epoch={} policy=strict-gpu-segments",
+                                "gpu_download_segments={} gpu_epoch={} policy=pagewise-gpu-segments",
                                 begin, Common::HitchDiagnostic::NowNs(), prepared.begin_ns,
                                 prepared.end_ns, binding.gpu_addr, binding.size, size,
                                 segments.size(), segments.front().device_address,
