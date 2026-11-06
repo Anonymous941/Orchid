@@ -2041,7 +2041,11 @@ void MainWindow::BootGame(const QString& filename, Service::AM::FrontendAppletPa
                 preset->program_id == Settings::DonkeyKongBananzaProgramId
                     ? tr("Game compatibility settings and the 30 FPS lock stay enabled in every "
                          "preset.")
-                    : tr("Recommended game compatibility settings stay enabled in every preset."),
+                : preset->program_id == Settings::MarioTennisFeverProgramId ||
+                        preset->program_id == Settings::HyruleWarriorsAgeOfImprisonmentProgramId
+                    ? tr("Recommended game compatibility settings stay enabled in every preset.")
+                    : tr("Settings apply for this launch. Your saved graphics settings stay "
+                         "unchanged."),
                 &dialog);
             compatibility->setObjectName(QStringLiteral("gamePresetCompatibility"));
             compatibility->setWordWrap(true);

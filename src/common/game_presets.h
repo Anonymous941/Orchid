@@ -44,6 +44,12 @@ inline constexpr u64 MarioKartWorldProgramId = 0x0400C3F00006E000ULL;
 inline constexpr u64 DonkeyKongBananzaProgramId = 0x040074A01BF12000ULL;
 inline constexpr u64 HyruleWarriorsAgeOfImprisonmentProgramId = 0x04003F40232DE000ULL;
 inline constexpr u64 MarioTennisFeverProgramId = 0x0400D4201C6EA000ULL;
+// Confirmed from the local programs' NUP/NPDM metadata, including the full Yoshi release.
+inline constexpr u64 KirbyAirRidersProgramId = 0x040077201BE50000ULL;
+inline constexpr u64 PokemonPokopiaProgramId = 0x0400A3A01EE4C000ULL;
+inline constexpr u64 StarFoxProgramId = 0x0400E88025B1A000ULL;
+inline constexpr u64 YoshiMysteriousBookProgramId = 0x0400245021D2C000ULL;
+inline constexpr u64 SuperMarioBrosWonderProgramId = 0x010015100B514000ULL;
 
 namespace Detail {
 inline auto SessionSetter(bool global) {
@@ -53,26 +59,27 @@ inline auto SessionSetter(bool global) {
     };
 }
 
-/// Shared compatibility baseline. Visual quality is applied after each title's fixes.
-inline void SetSwitch2BaseSettings(Values& settings, bool global) {
+/// Shared graphics baseline. Do not impose native GPU synchronization or clock settings here:
+/// Wonder uses the Switch 1 program layout and retains those preferences.
+inline void SetGraphicsBaseSettings(Values& settings, bool global) {
     const auto session = SessionSetter(global);
     session(settings.renderer_backend, RendererBackend::Vulkan);
     session(settings.resolution_setup, ResolutionSetup::Res1X);
-    session(settings.gpu_accuracy, GpuAccuracy::Low);
     session(settings.use_asynchronous_shaders, true);
     session(settings.astc_recompression, AstcRecompression::Bc3);
     session(settings.vram_usage_mode, VramUsageMode::Conservative);
-    session(settings.use_reactive_flushing, false);
     session(settings.vsync_mode, VSyncMode::FifoRelaxed);
     session(settings.scaling_filter, ScalingFilter::ScaleForce);
     session(settings.anti_aliasing, AntiAliasing::Fxaa);
 }
-} // namespace Detail
 
-inline void SetMarioKartWorldRecommendedSettings(Values& settings, bool global) {
-    Detail::SetSwitch2BaseSettings(settings, global);
-    Detail::SessionSetter(global)(settings.use_docked_mode, ConsoleMode::Handheld);
+inline void SetSwitch2BaseSettings(Values& settings, bool global) {
+    SetGraphicsBaseSettings(settings, global);
+    const auto session = SessionSetter(global);
+    session(settings.gpu_accuracy, GpuAccuracy::Low);
+    session(settings.use_reactive_flushing, false);
 }
+} // namespace Detail
 
 inline void SetDonkeyKongBananzaRecommendedSettings(Values& settings, bool global) {
     Detail::SetSwitch2BaseSettings(settings, global);
@@ -101,31 +108,19 @@ inline void SetMarioTennisFeverRecommendedSettings(Values& settings, bool global
 struct GamePreset {
     u64 program_id;
     const char* name;
-    /// The settings in the boot prompt's words.
-    const char* summary;
     void (*apply)(Values& settings, bool global);
 };
 
 inline constexpr GamePreset GamePresets[] = {
-    {MarioKartWorldProgramId, "Mario Kart World",
-     "Vulkan, 1x resolution, GPU Fast, asynchronous shaders, BC3, conservative VRAM, reactive "
-     "flushing off, FIFO Relaxed VSync, handheld mode, ScaleForce, and FXAA.",
-     SetMarioKartWorldRecommendedSettings},
-    {DonkeyKongBananzaProgramId, "Donkey Kong Bananza",
-     "Vulkan, 1x resolution, GPU Fast, asynchronous shaders, BC3, conservative VRAM, reactive "
-     "flushing off, FIFO Relaxed VSync, ScaleForce, FXAA, the Boost GPU clock and the 30 FPS "
-     "lock.",
-     SetDonkeyKongBananzaRecommendedSettings},
+    {MarioTennisFeverProgramId, "Mario Tennis Fever", SetMarioTennisFeverRecommendedSettings},
+    {DonkeyKongBananzaProgramId, "Donkey Kong Bananza", SetDonkeyKongBananzaRecommendedSettings},
     {HyruleWarriorsAgeOfImprisonmentProgramId, "Hyrule Warriors: Age of Imprisonment",
-     "Vulkan, 1x resolution, GPU Fast, asynchronous shaders, BC3, conservative VRAM, reactive "
-     "flushing off, FIFO Relaxed VSync, ScaleForce, FXAA, the Normal CPU clock and Balanced GPU "
-     "fences.",
      SetHyruleWarriorsRecommendedSettings},
-    {MarioTennisFeverProgramId, "Mario Tennis Fever",
-     "Vulkan, 1x resolution, GPU Fast, asynchronous shaders, BC3, conservative VRAM, reactive "
-     "flushing off, FIFO Relaxed VSync, ScaleForce, FXAA, Balanced GPU fences and asynchronous "
-     "presentation.",
-     SetMarioTennisFeverRecommendedSettings},
+    {KirbyAirRidersProgramId, "Kirby Air Riders", Detail::SetSwitch2BaseSettings},
+    {PokemonPokopiaProgramId, "Pokemon Pokopia", Detail::SetSwitch2BaseSettings},
+    {StarFoxProgramId, "Star Fox", Detail::SetSwitch2BaseSettings},
+    {YoshiMysteriousBookProgramId, "Yoshi and the Mysterious Book", Detail::SetSwitch2BaseSettings},
+    {SuperMarioBrosWonderProgramId, "Super Mario Bros. Wonder", Detail::SetGraphicsBaseSettings},
 };
 
 /// The title's preset, or nullptr when it has none.
