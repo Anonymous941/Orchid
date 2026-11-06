@@ -70,7 +70,9 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
         // Local loads/stores read URs but do not write them; keep this separate from the
         // uniform-write provenance classification used by bindless textures below.
         const bool uniform_local = (op == 0x983 || op == 0x987) && instruction.Bits(91, 1);
-        uses_uniform_bank |= op == 0xd08 || op == 0xf66 || touches_uniform_bank(instruction) ||
+        // Uniform-handle gathers read URs but do not write them: do not classify them as
+        // uniform writes in the bindless TEX handle-provenance walk below.
+        uses_uniform_bank |= op == 0xd08 || op == 0xf66 || op == 0xf63 || touches_uniform_bank(instruction) ||
                              uniform_red || uniform_local;
     }
     const auto address_of = [](u32 index) { return 0x50U + index * 8 + ((index + 1) / 3) * 8; };
@@ -164,6 +166,15 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
             high_uniform_bank = true;
             return 152 + reg;
         };
+        // Captured UIADD3 carry pair: restrict the new handling to PT, UR0-UR21,
+        // unmodified operands and UP1/UP0. Other forms retain their existing guards.
+        const bool uniform_carry_registers = opcode == 0x290 && insn.Bits(12, 4) == 7 &&
+            insn.Bits(16, 8) < 22 && insn.Bits(24, 8) < 22 && insn.words[1] < 22 &&
+            insn.Bits(64, 8) < 22 && !(insn.words[3] & 0xc00001ffU);
+        const bool uniform_carry_producer = uniform_carry_registers &&
+            (insn.words[2] & ~0xffU) == 0x0f83e000U;
+        const bool uniform_carry_consumer = uniform_carry_registers &&
+            (insn.words[2] & ~0xffU) == 0x08fe0400U;
         bool rewritten_uniform = false;
         bool uniform_guard = false;
         bool checked_guard = false;
@@ -200,7 +211,8 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code, bool geo
                    : opcode == 0x292 || opcode == 0x092 ? 0x212 : opcode == 0x892 ? 0x812 : opcode == 0x291 ? 0x211 : opcode == 0x896 ? 0x816 : 0x210;
         }
         const bool uniform_predication = opcode == 0xabb || opcode == 0xab9 || opcode == 0xc82 || opcode == 0x882 ||
-                                         opcode == 0x899 || opcode == 0x499;
+                                         opcode == 0x899 || opcode == 0x499 ||
+                                         (opcode == 0x299 && insn.Bits(12, 4) == 0);
         const u32 native_predicate = insn.Bits(12, 4);
         const bool guarded_uniform = (uniform_predication || uniform_guard) && native_predicate != 7;
         // A uniform guard UPn lives in R239 bit 6-n and is swapped into P(6-n) for the op.
@@ -2011,6 +2023,47 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             }
             break;
         }
+        case 0xf63: { // TLD4 with a uniform handle: captured 2D/ARRAY_2D SCR, no offsets/DC/F16.
+            // Maxwell TLD4.B encoding from upstream 563ed8e60b, adapted to this lowerer's
+            // private UR mapping. Keep the existing bound/array/per-tap gather path unchanged.
+            const u32 handle_index = insn.Bits(40, 6);
+            const bool array = insn.Bits(61, 3) == 5;
+            const u32 mask = insn.Bits(72, 4), second_dest = insn.Bits(64, 8);
+            const u32 source_a = insn.Bits(24, 8), source_b = insn.Bits(32, 8);
+            const u32 components = static_cast<u32>(std::popcount(mask));
+            const bool split = second_dest != 255;
+            const auto valid_source = [](u32 reg) { return reg < 216 || reg == 255; };
+            const auto valid_output = [](u32 reg, u32 count) {
+                return reg == 255 || (reg < 216 && count <= 216 - reg);
+            };
+            if (handle_index >= 28 || (insn.words[1] & ~0x80003fffU) != 0x30000000U ||
+                (insn.words[2] & ~0x05800fffU) != 0x081e0000U ||
+                (insn.words[3] & 0xc00001ffU) || mask == 0 ||
+                !valid_source(source_a) || !valid_source(source_b) ||
+                (array && (source_a == 255 || source_a + 1 >= 216)) ||
+                !valid_output(static_cast<u32>(dest), split ? std::min(components, 2U) : components) ||
+                (split && components > 2 && !valid_output(second_dest, components - 2)))
+                return fail(index, "native uniform texture gather mode");
+            const u32 handle = uniform_register(handle_index);
+            emit(0x5c98000000000000ULL | predicate | 250 | (u64{15} << 39) | (u64{source_a} << 20));
+            // ARRAY_2D packs (layer, x) in Ra and y in Rb, as the existing bound gather.
+            emit(0x5c98000000000000ULL | predicate | 251 | (u64{15} << 39) |
+                 (u64{array ? source_a + 1 : source_b} << 20));
+            if (array)
+                emit(0x5c98000000000000ULL | predicate | 252 | (u64{15} << 39) | (u64{source_b} << 20));
+            emit(0x5c98000000000000ULL | predicate | 246 | (u64{15} << 39) | (u64{handle} << 20));
+            emit(0xdec0000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{246} << 20) |
+                 (u64{array ? 3U : 2U} << 28) | (u64{mask} << 31) | (u64{insn.Bits(87, 2)} << 38) |
+                 (u64{insn.Bits(90, 1)} << 49) | (u64{7} << 51));
+            for (u32 i = 0; i < components; ++i) {
+                const u32 target = !split || i < 2
+                    ? (dest == 255 ? 255U : static_cast<u32>(dest) + i)
+                    : second_dest + i - 2;
+                if (target != 255)
+                    emit(0x5c98000000000000ULL | predicate | target | (u64{15} << 39) | (u64{250 + i} << 20));
+            }
+            break;
+        }
         case 0xb63: { // TLD4 (gather), 2D or ARRAY_2D without depth compare; component at bits 87-88.
             const u32 mask = insn.Bits(72, 4), second_dest = insn.Bits(64, 8);
             const u32 source_a = insn.Bits(24, 8), source_b = insn.Bits(32, 8);
@@ -2834,8 +2887,10 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             const u32 shift = uniform_register(insn.Bits(32, 8)), high = uniform_register(insn.Bits(64, 8));
             const bool right = insn.Bits(76, 1) != 0, high_result = insn.Bits(80, 1) != 0;
             if (dst == ~0U || dst == 255 || low == ~0U || shift == ~0U || high == ~0U ||
-                native_predicate != 7 || insn.Bits(73, 2) != 3 ||
-                (insn.words[2] & ~0x000118ffU) != 0x08000600U)
+                (native_predicate != 7 && native_predicate != 0) || insn.Bits(73, 2) != 3 ||
+                (insn.words[2] & ~0x000118ffU) != 0x08000600U ||
+                (native_predicate == 0 && (!right || !high_result || low != 255 || insn.Bits(75, 1) ||
+                                           (insn.words[3] & 0xc00001ffU))))
                 return fail(index, "native uniform register shift mode");
             u32 source;
             if (high_result && low == 255) source = high;        // (high:0) >> or << s, high word
@@ -3150,6 +3205,35 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
         }
         case 0xc11: {
             const u32 b = uniform_register(insn.Bits(32, 8));
+            if (native_predicate == 7 && insn.words[1] == 11 &&
+                (insn.words[2] & ~0x00020000U) == 0x0f8008ffU &&
+                !(insn.words[3] & 0xc00001ffU) && dest != 255 && b != ~0U) {
+                // The upper shifted bits belong to LEA.HI.X, not to this low-add carry.
+                emit(0x5c18000000000000ULL | predicate | 250 |
+                     (u64{insn.Bits(24, 8)} << 8) | (u64{b} << 20) | (u64{1} << 39));
+                emit(0x5b60000000000000ULL | predicate | 7 | (u64{insn.Bits(81, 3)} << 3) |
+                     (u64{250} << 8) | (u64{b} << 20) | (u64{7} << 39) | (u64{1} << 49));
+                emit(base(0x5c98000000000000ULL) | (u64{15} << 39) | (u64{250} << 20));
+                break;
+            }
+            if (native_predicate == 7 && insn.words[1] == 10 &&
+                (insn.words[2] & ~0x008000ffU) == 0x080f0c00U &&
+                !(insn.words[3] & 0xc00001ffU) && insn.Bits(64, 8) != 255 &&
+                dest != 255 && b != ~0U) {
+                // High word of (Rc:Ra)<<1, plus UR10 and the preceding low-add carry.
+                emit(0x3828000000000000ULL | predicate | 250 |
+                     (u64{insn.Bits(24, 8)} << 8) | (u64{31} << 20));
+                emit(0x3848000000000000ULL | predicate | 251 |
+                     (u64{insn.Bits(64, 8)} << 8) | (u64{1} << 20));
+                // The shifted pieces occupy disjoint bits; IADD combines them without writing
+                // a predicate (the preceding low-add carry is still live).
+                emit(0x5c10000000000000ULL | predicate | 250 | (u64{250} << 8) |
+                     (u64{251} << 20));
+                emit(0x5c10000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{b} << 20));
+                carry_value(insn.Bits(87, 3), 0);
+                emit(base(0x5c10000000000000ULL) | (u64{250} << 8) | (u64{253} << 20));
+                break;
+            }
             if (insn.Bits(80, 1) && !insn.Bits(72, 1) && !insn.Bits(62, 2) &&
                 insn.Bits(64, 8) == 255 && !(insn.words[1] & ~0xffU) && b != ~0U) {
                 // LEA.HI.X Rd, Ra, URb, RZ, s: the high word of Ra << s plus the uniform base.
@@ -3242,6 +3326,31 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             break;
         }
         case 0x210: case 0x810: case 0xa10: case 0xc10: { // IADD3 with zero third source and no carry outputs
+            if (uniform_carry_producer) {
+                const u32 a = insn.Bits(24, 8), b = insn.Bits(32, 8), c = insn.Bits(64, 8);
+                constexpr u32 mask = (1U << 5) | (1U << 6); // UP1 and UP0
+                save_predicate(mask);
+                emit(0x5c10000000000000ULL | predicate | 250 | (u64{a} << 8) | (u64{b} << 20));
+                unsigned_less(5, 250, a);
+                emit(0x5c10000000000000ULL | predicate | 251 | (u64{250} << 8) | (u64{c} << 20));
+                unsigned_less(6, 251, 250);
+                emit(0x38e8000000070000ULL | 239 | (u64{239} << 8) | (u64{mask} << 20));
+                restore_predicate(mask);
+                emit(base(0x5c98000000000000ULL) | (u64{15} << 39) | (u64{251} << 20));
+                break;
+            }
+            if (uniform_carry_consumer) {
+                const u32 a = insn.Bits(24, 8), b = insn.Bits(32, 8), c = insn.Bits(64, 8);
+                emit(0x5c10000000000000ULL | predicate | 250 | (u64{a} << 8) | (u64{b} << 20));
+                emit(0x5c10000000000000ULL | predicate | 251 | (u64{250} << 8) | (u64{c} << 20));
+                for (u32 bit : {5U, 6U}) {
+                    emit(0x3800000000000000ULL | predicate | 252 | (u64{239} << 8) |
+                         (u64{bit | (1U << 8)} << 20));
+                    emit(0x5c10000000000000ULL | predicate | 251 | (u64{251} << 8) | (u64{252} << 20));
+                }
+                emit(base(0x5c98000000000000ULL) | (u64{15} << 39) | (u64{251} << 20));
+                break;
+            }
             // 64-bit adds: IADD3 with a carry-out predicate (bits 81-83), then IADD3.X (bit 74) with
             // a carry-in predicate (bits 87-89, negate 90). Uniform forms keep UPn in R239 bit 6-n.
             if ((opcode == 0x210 || opcode == 0x810 || opcode == 0xa10) && insn.Bits(64, 8) == 255 &&

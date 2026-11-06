@@ -70,7 +70,7 @@ using VideoCommon::GenericEnvironment;
 using VideoCommon::GraphicsEnvironment;
 using VideoCommon::ShaderSnapshotFailure;
 
-constexpr u32 CACHE_VERSION = 0x4e4f0001; // Isolated no-OOT test cache.
+constexpr u32 CACHE_VERSION = 0x4e4f0002; // Supported-games lowering revision; separate from V3.
 constexpr size_t VULKAN_CACHE_FLUSH_PIPELINES = 128;
 constexpr size_t VULKAN_CACHE_FLUSH_MIN_SECONDS = 30;
 constexpr std::array<char, 8> VULKAN_CACHE_MAGIC_NUMBER{'y', 'u', 'z', 'u', 'v', 'k', 'c', 'h'};
@@ -890,8 +890,10 @@ void PipelineCache::LoadDiskResources(u64 title_id, std::stop_token stop_loading
     // every run with no pipelines (RX 6600 log: "Deleting old pipeline cache", ~600 pipelines
     // built in game). Own names let the caches coexist; files this version wrote under the old
     // names move over once.
+    // Serialized environments contain lowered Maxwell code. The corrected Yoshi carry/gather
+    // lowering must not reuse an older translation; leave V3's cache intact for comparisons.
     const auto cache_path = [&](std::string_view stem) {
-        return base_dir / fmt::format("{}.mythos.bin", stem);
+        return base_dir / fmt::format("{}.mythos-v4.bin", stem);
     };
     if (!Common::FS::Exists(cache_path("vulkan")) &&
         IsOwnPipelineCache(base_dir / "vulkan.bin", CACHE_VERSION)) {
