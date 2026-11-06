@@ -1686,36 +1686,15 @@ void PipelineCache::SerializeGraphicsPipeline(const GraphicsPipelineCacheKey& ke
     });
 }
 
-// Asynchronous translation of native graphics pipelines (NX2_SHADER_STUTTER.md).
-//
-// The GPU thread used to translate a new pipeline (Maxwell code to IR to SPIR-V) before its
-// draw, ~2-4 ms each. Now it builds the environments, detaches them from the 3D engine (copies
-// what translation reads, see GraphicsEnvironment::Detach) and queues the translation on
-// translation_workers, then waits for the result; driver compilation runs on pipeline workers.
-// The draw gets its pipeline, and environments that cannot detach use the GPU thread instead.
-//
-// Only native (Switch 2) programs take this path: their code was lowered when the shader cache
-// met them, so translation never reads guest memory for instructions. Compute pipelines stay
-// synchronous.
+// Native graphics translation workers are retained for a future complete environment snapshot.
+// Driver pipeline compilation remains asynchronous independently of this translation gate.
 bool PipelineCache::CanTranslateAsynchronously() const {
-    // Without the reuse recorder, native pointer classification can query live GPU mappings.
-    // That state is not part of the detached snapshot: keep this debug path on the GPU thread.
+    // This path only supports native programs. Their storage-pointer classification reads live
+    // GPU mappings, which GraphicsEnvironment::Detach does not snapshot. The reuse recorder must
+    // forward and record that classification too; it cannot make the live read worker-safe.
+    // Keep translation on the GPU thread until mapping answers have an immutable snapshot.
     // Driver pipeline compilation can still use its asynchronous workers.
-    if (!use_async_translation || !use_shader_reuse) {
-        return false;
-    }
-    if (!maxwell3d->GetNativeMacroEngine().native_turing) {
-        return false;
-    }
-    for (size_t index = 0; index < Maxwell::MaxShaderProgram; ++index) {
-        if (graphics_key.unique_hashes[index] == 0) {
-            continue;
-        }
-        if (!shader_infos[index] || !shader_infos[index]->lowered_native) {
-            return false;
-        }
-    }
-    return true;
+    return false;
 }
 
 std::optional<std::future<PipelineCache::TranslatedGraphicsPipeline>>

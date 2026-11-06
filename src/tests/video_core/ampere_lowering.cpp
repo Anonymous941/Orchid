@@ -287,6 +287,31 @@ public:
 private:
     std::span<const u64> instructions;
 };
+TEST_CASE("Ampere captured Yoshi constant LEA negates the base without emitting subtraction carry",
+          "[video_core][ampere]") {
+    const std::array<Instruction, 2> code{{
+        {{0x05057a11, 0x8000ac00, 0x078e18ff, 0x000fe200}}, EXIT,
+    }};
+    const auto lowered = LowerToMaxwell(code);
+    REQUIRE(static_cast<bool>(lowered));
+    const u64 scaled = FindMaxwell(lowered, 0x5c18 >> 1, 49);
+    REQUIRE(scaled != 0);
+    REQUIRE(((scaled >> 48) & 1) == 1);
+    REQUIRE(((scaled >> 39) & 31) == 3);
+    REQUIRE((scaled & 255) == 5);
+    REQUIRE(((scaled >> 8) & 255) == 5);
+    auto positive = code;
+    positive[0].words[1] &= 0x7fffffffU;
+    const auto added = LowerToMaxwell(positive);
+    REQUIRE(static_cast<bool>(added));
+    REQUIRE(((FindMaxwell(added, 0x5c18 >> 1, 49) >> 48) & 1) == 0);
+    auto carry = code;
+    carry[0].words[2] = 0x078018ff;
+    REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(carry)));
+    auto unverified = code;
+    unverified[0].words[1] |= 1U << 30;
+    REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(unverified)));
+}
 } // namespace
 
 TEST_CASE("Shadowed registers keep their values across instructions that borrow their quartet",

@@ -1,0 +1,157 @@
+YOSHI-HANDOFF – auf ausdrücklichen Nutzerwunsch gestoppt
+Stand: 2026-11-06, ca.16:02 Europe/Berlin
+
+AUFTRAG / STATUS
+- User: Grafikglitch kurz nach erster Cutscene (schwarz/magenta), nächste Szene normal.
+  Zusätzlich sehr schnelles helles Flackern beim Betreten eines Levels.
+- NICHT vollständig behoben. Keine Erfolgsmeldung daraus ableiten, dass Shader zugelassen
+  werden oder einzelne Screenshots normal aussehen. Frühere 60-Hz-Aufnahmen belegen Flackern.
+- User wollte ursprünglich weiterarbeiten bis fertig; neueste Anweisung ist ausdrücklich:
+  „stop erstmal und gib mir ein handoff“. Nicht automatisch weiterarbeiten.
+- Eigener letzter Emulator PID2430955 sauber via Qt SIGTERM beendet, Exit0, nicht erzwungen.
+  queued-run.py / Exec-Session10165 beendet; äußere echte GPU-Sperre freigegeben.
+- Keine eigenen laufenden Builds. Fremder Wonder-Test lief danach wieder; nicht beenden.
+
+CHECKOUT / PATCH / BINARY
+- Tatsächlich bearbeitet: /home/leon/Documents/Codex/2026-11-06/pas-s/work/orchid-no-oot
+- Basis f79898511007f738bc3918a3fe8d208feaf28c08, Branch codex/merge-all-20261106.
+- Neun eigene modifizierte Dateien, uncommittet; kein Push, kein Release, kein Main-Merge.
+- Vor Fortsetzung Worktree-Liste und git status prüfen. Nicht aus Ordnernamen Rollen ableiten.
+- Regeln: /home/leon/Orchid/AGENTS.md und /home/leon/src/Eglantine/AGENTS.override.md.
+  Im bearbeiteten Checkout lag keine eigene AGENTS-Datei.
+- Patch: /home/leon/Orchid/orchid-issues/yoshi-intro-20261106/fix.patch
+- Letztes gebautes Binary: <Checkout>/build/bin/orchid
+- SHA256 059ffb1a3fe2a53d3f9382e32f72fae1d59f4d675173f2dcc8a60e33b50d538d
+- Experimentelles Paket mit separater Kopie des v3-Profils:
+  /home/leon/Orchid/orchid-builds/yoshi-fix-20261106/
+  Start-Orchid-EXPERIMENTELL.sh und LESEN.txt; ausdrücklich kein fertiger Fix.
+- Original-v3-Binary, Originalprofil und Spieldumps unverändert.
+- Ursprünglich laufender User-Build: .../pas-s/outputs/Orchid-v3-Test/orchid,
+  a03f736184 (perf/tennis-quality-presets), portable user/. Dieser lief später nicht mehr;
+  wir haben ihn nicht beendet. Portable-Binaries verweigert das isolierte MCP zurecht.
+
+IMPLEMENTIERTE ÄNDERUNGEN
+1. src/shader_recompiler/frontend/ampere/lower_to_maxwell.h:
+   - F63: belegter 2D-TLD4 mit AOFFI, signed6-Bit-Offsets; Array-AOFFI/PTP/DC/F16 verboten.
+   - F60: Cube-Dimension3 über vorhandene 3D-Koordinatenpackung, Maxwell-Typ6; DC verboten.
+   - Handle-Provenienz: REDUX3c4, UBREV2be, UIADD3 290 als echte skalare UR-Schreiber.
+     UR5 überschreibt UR6/7 nicht. Writes in Handlepaar bleiben abgelehnt.
+   - Registerbindless Gather364, eng auf belegtes gepacktes2D eingeschränkt.
+   - SURED ADD/OR für Buffer/2D/3D; andere Operationen nicht pauschal freigegeben.
+   - Belegte LEA mit negierter Cbuf-Konstante ohne unmodellierten Subtraktionscarry.
+2. Tests:
+   ampere_bindless_tex.cpp, ampere_lowering.cpp, ampere_sured.cpp,
+   ampere_yoshi_uniform_gather.cpp: echte erfasste Worte, Operand-/Register-/Predicate-Grenzen,
+   teils komplette Maxwell-IR-Prüfung (Gather, ImageAtomicOr32), negative Varianten.
+3. vk_shader_reuse.h/.cpp und shader_reuse_environment.cpp:
+   - RecordingEnvironment hatte IsNativeProgram und IsCbufStorageBufferPointer nicht
+     überschrieben! Defaults false/true veränderten die Translation bereits beim Recording.
+   - Jetzt weitergereicht; Pointer-Queries mit index/offset aufgezeichnet und vor Reuse geprüft.
+   - Native-Identität, HasNativeInstructions und Surface-Bank als Properties verglichen.
+   - Zwei Regressionstests, u.a. Mappingwechsel ohne geänderten Shader/Cbuf.
+4. vk_pipeline_cache.cpp:
+   - Native Hintergrundübersetzung konservativ deaktiviert (CanTranslateAsynchronously=false).
+     Detach snapshotet keine GPU-Mappingklassifikation; korrektes Forwarding würde andernfalls
+     Live-Mappingzugriffe auf dem Translationworker erlauben.
+   - Asynchrone Treiberkompilierung bleibt bestehen. Möglicher Performanceverlust ungemessen.
+
+VALIDIERUNG
+- Letzter Build orchid+tests erfolgreich, keine Warnungen/Errors in build-recorder.log.
+- git diff --check sauber.
+- 65 Fälle / 73.171 Assertions bestanden, siehe tests-recorder.txt.
+  Filter: [shader_reuse],[yoshi_gather],[bindless_tex],[sured],*LEA*,RecordingEnvironment keeps*
+- Drei vollständige zuvor abgelehnte Computeprogramme final primary-accepted in beiden
+  Cooperative-Modi:6/6. check-f60-final-results.txt. KEIN GPU-Korrektheitsbeweis.
+- Unabhängiger Source-Review der Shadererweiterungen ohne blockierende Befunde.
+- Letztes Binary: MTF-NUP Titelbild, gerenderte Übung und Story-Intro erreicht, sauber gestoppt.
+  Run20261106-153550-bb495bfc. Der AGENTS-Pfad .../updates/327680/exefs/main existiert hier
+  nicht mehr; vorhandenes Mario Tennis Fever.nup genutzt, Titelbild Ver.5.0.0.
+  Kein Screenshot des Hauptmenüs gesichert; Titel/Übung sind belegt.
+
+LAUFZEIT / BEFUNDE
+Run-Verzeichnisbasis: /home/leon/.local/share/codex-orchid-mcp/state/runs/
+- 20261106-144335-ee6ce1d6: v3-Baseline, Fehler reproduziert.
+- 20261106-145147-9593924c: Gather/Cube, Teilverbesserungen.
+- 20261106-150034-6a3cc868: zusätzlich Provenienz; level-check.mp4 im Issueordner.
+  10s/60Hz,311/600Frames mit YAVG>200, Sprünge bis60.49. Einzelbilder täuschen!
+- 20261106-151346-97e19389: GPU High. Keine bestätigte Lösung; andere Grafikfehler.
+  quality=high ist NICHT GPU High: Profile setzen weiterhin GPU Low. F9 toggelt GPU-Modus.
+- 20261106-152158-54e0c183: zusätzlich364/SURED/LEA, weiterhin Überbelichtung/Buchreste,
+  level-final.mp4. Noch VOR Recorder-Fix.
+- 20261106-152927-4c6daee7: coldcache, SHADER_REUSE/ASYNC_TRANSLATION/SPLIT=0,
+  ebenfalls Grafikfehler. Ebenfalls vor Recorder-Fix, kein sauberer Einzelvariablenvergleich.
+- 20261106-155507-1964b907: LETZTER Build MIT Recorder-Fix, coldcache, EDEN_YO_STATS=1.
+  Nach langer Wartezeit auf fremden Wonder-Test gestartet. Intro/Dialog/Buchkarte erreicht;
+  noch Schattierungsfehler, KEIN Leveltest/60-Hz-Video mit diesem letzten Binary abgeschlossen.
+  0003-queued.png: erkennbares Yoshi-Intro;0004/0005: Dialog/Buchkarte, dunkle Schattierung.
+  0006-queued.png zeigt ein Steam-Fenster über dem Emulator auf dem privaten Testdisplay:
+  KEIN Spielbefund! Kein Steam-Prozess wurde manipuliert oder beendet. Die danach geplante
+  windowraise-Aktion wurde wegen neuer User-Stoppanweisung NICHT ausgeführt.
+  Der aktuelle Spielzustand war noch beim Dialog/Lupen-Tutorial, nicht im ersten Level.
+  Stopbundle: .../state/bundles/20261106-155507-1964b907-1793977333762921157
+
+YO-TRACE DES LETZTEN LAUFS
+- EDEN_YO_STATS=1 loggt jeden Present ab40s: requested/presented image, Kandidaten, Größen,
+  ticks,gmod/cmod,lastwriter,Draw/Clear/Dispatch/Skip und begrenzte rt>ps-Sequenz.
+- Analyse180–238.4s:3120Presents, immer accel=true,cands=1,addr==presented_img.
+  Zwei stabile1920x1080fmt0Bilder:
+  cpu4f481000→gpu810e3a0000; cpu4fd01000→gpu810ec10000.
+  Kein Beleg für versehentlich präsentierte Buchtextur.101unveränderte Wiederholungs-Presents,
+  sonst Alternation. Fast immer2–4fehlendePipelines auf BEIDEN Bildern, nicht nur einem.
+- Neuer Grafik-F60-Provenienzreject:1ae1da0e00+ed0,
+  Worte1d247f60 3000041c 089e01ff; um184s.
+- Garbage-Branch-Capture um185s; vier Nullcode-Captures um260s.
+- YO-Trace liegt im normalen profile/data/eden/log/eden_log.txt dieses Runs.
+
+NEUE WICHTIGSTE STATISCHE SPUR (NOCH NICHT IMPLEMENTIERT / NICHT ALS YOSHI-URSACHE BEWIESEN)
+Akzeptierter GPU-überschriebener Shadercode kann als adressbasierter Cachehit stale bleiben:
+- Compute SSBO: BindHostComputeStorageBuffers→MarkWrittenBuffer
+  (buffer_cache.h ca.1658/2012) markiert GPU modified/Downloads/Nx2MarkGpuWritten,
+  invalidiert aber ShaderCache nicht.
+- Readback DownloadBufferMemory ca.2756 schreibt device_memory.WriteBlockUnsafe,
+  ebenfalls ohne pipeline_cache.InvalidateRegion.
+- ComputeShader→TryGet(shader_cache.cpp ca.211/350) gibt ShaderInfo nach Geräteadresse
+  zurück, bevor neue Env/Quellbytes/Hash erstellt werden.
+- Grafik RefreshStages ca.84–90 kann zusätzlich bei unverändertem Dirtybit alten Zustand nehmen.
+- Beschleunigter DMA BufferCopy→BufferCache::DMACopy invalidiert Shader ebenfalls nicht;
+  nicht beschleunigter SafeReadCachedWrite-Fallback tut dies über normalen Writepfad.
+- Maxwell-Register invalidate_shader_cache und invalidate_shader_cache_no_wfi sind im Header
+  definiert, besitzen aber keine cpp-Handler. invalidate_texture_data_cache verarbeitet
+  nur eingesammelte CPUwrites, kein Ersatz für GPUcodewrites.
+- Native Hash ist inhaltlich korrekt, wird aber nur bei neuem ShaderInfo berechnet.
+- Rejection-Recheck hilft nur ABGELEHNTEN Programmen; er vergleicht nur erstes0x2000Fenster.
+Nächste Diagnose: Überschneidungen GPU-write-Bereiche mit registrierten Shaderregionen erfassen,
+gezielt sichere Code-Readbacks/Fingerprints vergleichen. Nicht pauschal proDraw rehashen und
+nicht unbekannte Instruktionsworte aus Null-/Garbagecaptures implementieren!
+
+WEITERE A/B-MÖGLICHKEITEN
+- EDEN_NX2_INLINE_DEFER=0: sofortige Buffer/Texture/Shaderinvalidierung bei InlineUpload.
+- EDEN_NX2_SPLIT=0: Engine-Split aus.
+- EDEN_NX2_ASYNC_TRANSLATION=0: durch letzten Fix bereits konservativ abgeschaltet.
+- EDEN_NX2_RT_TRACE=1 / IMAGE_TRACE=1 ergänzend; IMAGE_TRACE nur alle240Queries kann
+  alternierende Frameparität vollständig maskieren.
+- Fast2D-Unswizzle kein Runtimeknob; stammt bereits aus Baselineaf0aee91e. Nicht eigenesDiff.
+- Framebuffer-Direktkandidaten haben weniger Größen/Layoutprüfungen als physische Aliase,
+  aber letzter YO-Trace zeigt KEINEN Auswahlfehler. Nicht ohne weiteren Beleg ändern.
+
+GPU-SLOT / QUEUED-RUN HELFER
+- Mehrere fremde Wonder-Folgeläufe belegten GPU; normale MCP boot() fail-fast LOCK_NB.
+- queued-run.py im Issueordner ist ein eigener persistenter Diagnoseclient, kein Sharedserveredit.
+  Er erwirbt dieselbe echte state/gpu.lock BLOCKIEREND, hält sie bis Run-Ende und nutzt dann
+  den vorhandenen _runtime.benchmark Outer-Lock-Mechanismus. Keine parallelen GPUtests!
+- Eigene Module: /home/leon/.local/share/codex-orchid-mcp/orchid_mcp.py (unverändert).
+- Interpreter: /home/leon/.cache/uv/environments-v2/server-2794accec2e2bb6a/bin/python3
+- stdinJSON: {"steps":[{"buttons":"A","hold_ms":150,"wait_s":1}]} bzw {"stop":true}.
+  Screenshots/Runpfad werden als JSON ausgegeben; nie ein vorhandenes fremdes Spiel übernehmen.
+- Letzter Client ist vollständig beendet. Nicht versuchen Session10165 weiterzunutzen.
+
+NÄCHSTE SCHRITTE BEI EXPLIZITER FORTSETZUNG
+1. Regeln/Worktree/status prüfen, eigene9Änderungen erhalten.
+2. GPU-Slot seriell erwerben; letzten Build verwenden, EDEN_YO_STATS und Shaderdumps setzen.
+3. Nach Intro Dialoge einzeln/batches anhand Screenshots; auf Buchkarte Lupe zur laufenden
+   Blume bewegen(LS), bei A-Prompt bestätigen, weitereDialoge bis erstesLevel.
+4. Letztes Binary im Level60Hz aufnehmen und Pixelsprünge/YO-Presents gemeinsam bewerten.
+5. GPU-codewrite/Shadercache-Spur gezielt instrumentieren; dann erst allgemeine Korrektur.
+6. Neue F60-Rejection als vollständiges Programm analysieren, Guards nicht blind lockern.
+7. Nach Codefix passende Tests, MTF-Regressionscheck und neue visuelleYoshiPrüfung.
+8. Erst bei belegtem Erfolg Paket/Status als fertigenFix kennzeichnen; aktuell experimentell.

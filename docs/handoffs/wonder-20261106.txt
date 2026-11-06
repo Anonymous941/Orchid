@@ -1,0 +1,57 @@
+Wonder Switch 2 Edition: lokaler Ladefix, 2026-11-06
+
+Start auf dem Desktop:
+  /home/leon/Orchid/orchid-builds/20261106-wonder-loading-fix/start-wonder.sh
+
+Der Starter nutzt ein eigenes Profil (Einstellungen/Spielstaende unter profile/).
+Tastatur: Q+E=L+R, C=A, X=B, Pfeiltasten=Steuerung, M=Plus.
+Die Spieldumps bleiben unveraendert. Das Binary ist eine lokale, nicht veroeffentlichte
+Aenderung auf /home/leon/src/Eglantine, HEAD 9b9e5e8d4.
+SHA256 orchid: a7d8bdca4696600cb1f7f47cacf3c5567c6aa2c59382eaf76356e0204b171b99
+
+Emulator-Aenderungen:
+- Lose Switch-2-Edition-Upgrades mit System/AocUpgradeVersion.txt werden ueber
+  den Basis-RomFS gelegt, bevor das Spiel Plattformressourcen anfordert.
+- pl:u::OpenFont liefert ein echtes IFontService und kopiert die geladenen
+  Systemfonts in den TransferMemory-Puffer des Spiels. Die Speicherreferenz
+  bleibt bis zum Ende des Fontservice erhalten. Cmd0/Cmd1 des Fontservice
+  liefern beschraenkte Deskriptoren fuer die vorhandenen Fontdaten.
+- Cmd1 ist nur anhand des SDK-Clients geprueft; Sprachprioritaet ist nicht implementiert.
+
+Zusaetzlicher Daten-Workaround nur in diesem lokalen Profil:
+Das Upgrade verlangt RSDB/DVModelBakeInfo.Product.110.rstbl.byml.zs, aber diese
+Datei fehlt auch in den archivierten NUPs. Vorhandene .100 und .120 enthalten
+nach Zstd-Dekompression bytegleiche 224 Byte (SHA256
+4acd757137ebcce8cb624b5c3079e786e4f2f046a8094e7e3c8dd43f73eb3137).
+Eine lokale LayeredFS-Mod verweist fuer .110 auf die vorhandene .120.
+Das ist ein gezielt getesteter Workaround fuer den vorliegenden Dump, keine
+allgemeine Versionsalias-Regel im Emulator. Ein passender vollstaendiger Dump
+sollte ohne diese Mod verwendet werden. Spaetere Level/Bellabel Park sind
+nicht durch den kurzen Starttest abgedeckt.
+
+Pruefung:
+- 21 NSO/NUP/RomFS-Testfaelle, 61906 Assertions bestanden.
+- Vulkan: Titelmenue, Neues Spiel, Figurenwahl, Intro und spielbare Szene;
+  Lauf- und Sprungeingaben reagieren. Screenshot wonder-gameplay.png im Laufordner.
+- Originalpfad mit lokaler Mod: Titelmenue korrekt.
+- Mario Tennis Fever NUP/Update327680: Uebungsplatz und Hauptmenue korrekt.
+- Der archivierte Starter wurde ohne GDB bis ins Startmenue geprueft.
+  Das Testprofil ist stumm; Audio bei Bedarf in der Oberflaeche einschalten.
+- Genaue Logs und Einschraenkungen: findings.txt.
+
+Details/Logs:
+/home/leon/Orchid/orchid-issues/wonder-loading-20261106/
+
+ABI-Nachweis: lokaler SDK-Client (OpenFont/IFontService), ergaenzend
+https://switchbrew.org/wiki/Glue_services#pl:u
+
+Build: vorhandene CMake-Konfiguration RelWithDebInfo / ENABLE_WERROR=OFF.
+Die restaurierten Ninja-Abhaengigkeitslogs loesten wiederholte Vollneubauten aus.
+Die geaenderten TUs wurden mit den von CMake erzeugten Originalkommandos ueber
+separate Ninja-Ziele gebaut und mit dem originalen CMake-Linkkommando verlinkt.
+Auch die Testobjekte wurden neu gebaut; keine eigenen Compilerflags eingefuehrt.
+
+Nutzer-Rueckmeldung bei der Projektuebernahme (2026-11-06):
+Launcher "Orchid Wonder DLC Test (2026-11-06)" bereitgestellt.
+Leon bestaetigt: "jo wonder klappt". Keine Aussage ueber den vollstaendigen
+DLC-/Bellabel-Park-Durchlauf daraus ableiten.

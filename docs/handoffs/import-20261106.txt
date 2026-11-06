@@ -1,0 +1,33 @@
+Project import 2026-11-06
+
+Base: origin/main 8e65eed513. Imported the saved Wonder patch (3 files) and
+Yoshi experimental patch (9 files) without modifications to emulator code.
+AGENTS.md adapted for the source checkout; testbuild + application launcher
+.desktop delivery is an explicit requirement. Three hourly tasks migrated
+to the Eglantine project; previous schedules disabled; artifacts remain in
+/home/leon/Orchid.
+
+Validation:
+- Fresh RelWithDebInfo build: orchid + tests passed (ENABLE_WERROR=OFF).
+- 78 selected cases, 73485 assertions passed (shader reuse, Yoshi gather,
+  bindless textures, SURED, LEA, recorder, NSO, NUP). No [romfs] tag matched.
+- git diff --check clean.
+- Combined Mario Tennis Fever NUP smoke: loading screen still visible after
+  138 seconds using mtf-mcp-smoke-v1; menu regression gate NOT passed.
+  Run: /home/leon/.local/share/codex-orchid-mcp/state/runs/20261106-163643-453a6662
+  No main integration/release. This branch preserves the imported work for testing.
+- Yoshi flicker still unresolved, see yoshi handoff. No new Yoshi success claim.
+- Existing Wonder-only archived build was previously tested to gameplay, and
+  Leon confirmed it works via its new application launcher entry today.
+
+Launcher: Orchid Wonder DLC Test (2026-11-06)
+Binary: /home/leon/Orchid/orchid-builds/20261106-wonder-loading-fix/orchid
+SHA256: a7d8bdca4696600cb1f7f47cacf3c5567c6aa2c59382eaf76356e0204b171b99
+Standalone Wonder profile includes a local missing-dump-file workaround.
+DLC / Bellabel Park not fully verified.
+
+Combined experimental launcher: Orchid Test 2026-11-06 (Wonder + Yoshi experimentell)
+Binary: /home/leon/Orchid/orchid-builds/20261106-combined-test/orchid
+SHA256: 4a0a123b4f10aac9bdffd662fad185a1eb7385522bb597f4bc960f63147acc54
+Compiled from base plus the imported patches before import commits, so binary
+version metadata shows 8e65eed513; see branch history for source changes.

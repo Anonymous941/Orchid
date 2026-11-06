@@ -841,4 +841,79 @@ TEST_CASE("Ampere uniform bindless TEX ignores a general-register LDG naming the
     }};
     REQUIRE(static_cast<bool>(LowerToMaxwell(code)));
 }
+TEST_CASE("Ampere uniform bindless cube TEX preserves captured coordinates and explicit LOD",
+          "[video_core][ampere][bindless_tex]") {
+    // Yoshi's cube sample: Ra=R14/R15, Rb=R54/R55, UR6, LL, RGB to R14/R15/R54.
+    std::array<Instruction, 3> code{{
+        {{0x3f077899, 20, 0x08011606, 0x000fe200}},
+        {{0x0e0e7f60, 0x70000636, 0x0d1e0736, 0x000f4200}},
+        sample[2],
+    }};
+    const auto lowered = LowerToMaxwell(code);
+    REQUIRE(static_cast<bool>(lowered));
+    const u32 start = lowered.source_instruction_offsets[1];
+    REQUIRE(lowered.instructions[start] == Copy(250, 14));
+    REQUIRE(lowered.instructions[start + 1] == Copy(251, 15));
+    REQUIRE(lowered.instructions[start + 2] == Copy(252, 54));
+    REQUIRE(lowered.instructions[start + 3] == Copy(246, 222));
+    REQUIRE(lowered.instructions[start + 4] == Copy(247, 55));
+    const u64 texture = lowered.instructions[start + 5];
+    REQUIRE((texture & 0xffc0000000000000ULL) == 0xde80000000000000ULL);
+    REQUIRE(((texture >> 28) & 7) == 6); // Maxwell CUBE
+    REQUIRE(((texture >> 37) & 7) == 2); // explicit LOD
+    REQUIRE(((texture >> 31) & 15) == 7);
+    REQUIRE(lowered.instructions[start + 6] == Copy(14, 250));
+    REQUIRE(lowered.instructions[start + 7] == Copy(15, 251));
+    REQUIRE(lowered.instructions[start + 8] == Copy(54, 252));
+    // CUBE depth compare has a different operand contract and remains refused.
+    code[1].words[2] |= 1U << 14;
+    REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(code)));
+}
+TEST_CASE("Ampere uniform bindless TEX distinguishes scalar adjacent uniform writes from handle writes",
+          "[video_core][ampere][bindless_tex]") {
+    // Captured Yoshi operations write UR5 beside its UR6/UR7 texture-handle pair.
+    const std::array<Instruction, 3> writes{{
+        {{0x190573c4, 0, 0x00014000, 0x001e2200}}, // REDUX.MAX.U32 UR5, R25
+        {{0x000572be, 4, 0x08000000, 0x000fe200}}, // UBREV UR5, UR4
+        {{0x08057290, 9, 0x0fffe03f, 0x000fe200}}, // UIADD3 UR5, UR8, UR9, URZ
+    }};
+    for (const auto& write : writes) {
+        std::array<Instruction, 4> code{{
+            {{0x3f077899, 20, 0x08011606, 0x000fe200}},
+            write,
+            {{0x1c1e7f60, 0x3000061d, 0x0c9e0f1c, 0x000f4800}},
+            sample[2],
+        }};
+        REQUIRE(static_cast<bool>(LowerToMaxwell(code)));
+        for (u32 target : {6U, 7U}) {
+            code[1].words[0] = (write.words[0] & ~0x00ff0000U) | (target << 16);
+            const auto rejected = LowerToMaxwell(code);
+            REQUIRE_FALSE(static_cast<bool>(rejected));
+            REQUIRE(rejected.error == "native uniform bindless texture handle provenance");
+        }
+    }
+}
+TEST_CASE("Ampere register bindless TLD4 preserves captured predicated Yoshi gather",
+          "[video_core][ampere][bindless_tex]") {
+    const std::array<Instruction, 2> code{{
+        {{0x02101364, 0x38000010, 0x001e0f12, 0x00014200}}, sample[2],
+    }};
+    const auto lowered = LowerToMaxwell(code);
+    REQUIRE(static_cast<bool>(lowered));
+    REQUIRE(lowered.instructions[0] == Copy(250, 2, 1));
+    REQUIRE(lowered.instructions[1] == Copy(251, 3, 1));
+    REQUIRE(lowered.instructions[2] == Copy(246, 16, 1));
+    REQUIRE((lowered.instructions[3] & 0xffc0000000000000ULL) == 0xdec0000000000000ULL);
+    REQUIRE(((lowered.instructions[3] >> 16) & 15) == 1);
+    REQUIRE(((lowered.instructions[3] >> 20) & 255) == 246);
+    REQUIRE(((lowered.instructions[3] >> 28) & 7) == 2);
+    REQUIRE(((lowered.instructions[3] >> 31) & 15) == 15);
+    for (u32 i = 0; i < 4; ++i)
+        REQUIRE(lowered.instructions[4 + i] == Copy(16 + i, 250 + i, 1));
+    for (const u32 bit : {60U, 62U, 76U, 78U, 79U, 89U, 91U}) {
+        auto invalid = code;
+        invalid[0].words[bit / 32] ^= 1U << (bit % 32);
+        REQUIRE_FALSE(static_cast<bool>(LowerToMaxwell(invalid)));
+    }
+}
 } // namespace

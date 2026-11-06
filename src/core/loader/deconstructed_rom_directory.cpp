@@ -23,6 +23,7 @@
 #include "core/file_sys/patch_manager.h"
 #include "core/file_sys/romfs.h"
 #include "core/file_sys/romfs_factory.h"
+#include "core/file_sys/vfs/vfs_layered.h"
 #include "core/hle/kernel/k_page_table.h"
 #include "core/hle/kernel/k_process.h"
 #include "core/hle/service/filesystem/filesystem.h"
@@ -458,8 +459,25 @@ AppLoader_DeconstructedRomDirectory::LoadResult AppLoader_DeconstructedRomDirect
         return {result, {}};
     }
 
-    FileSys::SetLooseAOC(standalone ? FindLooseAOC(dir, metadata.GetTitleID())
-                                    : std::vector<std::pair<u64, FileSys::VirtualFile>>{});
+    auto loose_aoc = standalone ? FindLooseAOC(dir, metadata.GetTitleID())
+                               : std::vector<std::pair<u64, FileSys::VirtualFile>>{};
+    if (metadata.IsSwitch2() && !loose_aoc.empty() && LooseRomFS() != nullptr) {
+        auto base_romfs = FileSys::ExtractRomFS(romfs);
+        for (const auto& [aoc_id, aoc_romfs] : loose_aoc) {
+            auto upgrade_romfs = FileSys::ExtractRomFS(aoc_romfs);
+            if (base_romfs == nullptr || upgrade_romfs == nullptr ||
+                upgrade_romfs->GetFileRelative("System/AocUpgradeVersion.txt") == nullptr) {
+                continue;
+            }
+            // Edition upgrade packs contain platform resources needed before the game can
+            // mount optional add-on content. Keep base resources as the fallback layer.
+            base_romfs = FileSys::LayeredVfsDirectory::MakeLayeredDirectory(
+                {std::move(upgrade_romfs), std::move(base_romfs)});
+            romfs = FileSys::CreateRomFS(base_romfs);
+            LOG_INFO(Loader, "Applied loose edition upgrade {:016X} to program RomFS", aoc_id);
+        }
+    }
+    FileSys::SetLooseAOC(std::move(loose_aoc));
 
     if (override_update) {
         const FileSys::PatchManager patch_manager(

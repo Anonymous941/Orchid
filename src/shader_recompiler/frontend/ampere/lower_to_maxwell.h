@@ -1257,20 +1257,23 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                  (u64{operation} << 29) | (u64{dimension} << 33) | (u64{offset} << 36));
             break;
         }
-        case 0x59f: { // SURED.D.ADD.STRONG.GPU.IGN U32, direct descriptor, buffer (1) or 2D (3).
+        case 0x59f: { // SURED.D.ADD/OR.STRONG.GPU.IGN U32, direct descriptor, buffer, 2D or 3D.
             const u32 binding = insn.Bits(54, 5), offset = insn.Bits(40, 14);
             const u32 coordinate = insn.Bits(24, 8), data = insn.Bits(32, 8);
-            const u32 dimension = insn.Bits(61, 3);
+            const u32 dimension = insn.Bits(61, 3), operation = insn.Bits(87, 4);
+            const u32 coordinates = dimension == 5 ? 3U : 2U;
             const u32 first_reserved = uses_uniform_bank ? 216U : 246U;
-            if (insn.words[2] != 0x0010e000 || (dimension != 1 && dimension != 3) ||
+            if ((insn.words[2] & ~0x07800000U) != 0x0010e000 || (operation != 0 && operation != 6) ||
+                (dimension != 1 && dimension != 3 && dimension != 5) ||
                 insn.Bits(59, 2) || binding >= 18 || offset > 0x1fff ||
-                coordinate >= first_reserved - 1 || (data >= first_reserved && data != 255))
+                coordinate + coordinates > first_reserved || (data >= first_reserved && data != 255))
                 return fail(index, "native surface reduction mode");
             if (result.required_texture_buffer != ~0U && result.required_texture_buffer != binding)
                 return fail(index, "native surface descriptor buffer conflict");
             result.required_texture_buffer = binding;
+            // Operation6 is bitwise OR in both native ATOM numbering and Maxwell SURED.
             emit(0xeb40000000000000ULL | predicate | data | (u64{coordinate} << 8) |
-                 (u64{dimension} << 33) | (u64{offset} << 36) | (u64{1} << 51));
+                 (u64{operation} << 24) | (u64{dimension} << 33) | (u64{offset} << 36) | (u64{1} << 51));
             break;
         }
         case 0xb97: { // SULD.P.1D/BUFFER/2D/2D_ARRAY/3D.IGN, direct descriptor, channel mask at 72-75.
@@ -2023,10 +2026,12 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             }
             break;
         }
-        case 0xf63: { // TLD4 with a uniform handle: captured 2D/ARRAY_2D SCR, no offsets/DC/F16.
+        case 0xf63: { // TLD4 with a uniform handle: 2D AOFFI or 2D/ARRAY_2D SCR, no DC/F16.
             // Maxwell TLD4.B encoding from upstream 563ed8e60b, adapted to this lowerer's
             // private UR mapping. Keep the existing bound/array/per-tap gather path unchanged.
             const u32 handle_index = insn.Bits(40, 6);
+            const u32 offset_mode = insn.Bits(76, 2);
+            const bool offsets = offset_mode == 1;
             const bool array = insn.Bits(61, 3) == 5;
             const u32 mask = insn.Bits(72, 4), second_dest = insn.Bits(64, 8);
             const u32 source_a = insn.Bits(24, 8), source_b = insn.Bits(32, 8);
@@ -2037,7 +2042,9 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 return reg == 255 || (reg < 216 && count <= 216 - reg);
             };
             if (handle_index >= 28 || (insn.words[1] & ~0x80003fffU) != 0x30000000U ||
-                (insn.words[2] & ~0x05800fffU) != 0x081e0000U ||
+                (insn.words[2] & ~0x05801fffU) != 0x081e0000U ||
+                offset_mode > 1 || (offsets && array) ||
+                (offsets && source_a != 255 && source_a + 1 >= 216) ||
                 (insn.words[3] & 0xc00001ffU) || mask == 0 ||
                 !valid_source(source_a) || !valid_source(source_b) ||
                 (array && (source_a == 255 || source_a + 1 >= 216)) ||
@@ -2046,14 +2053,19 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 return fail(index, "native uniform texture gather mode");
             const u32 handle = uniform_register(handle_index);
             emit(0x5c98000000000000ULL | predicate | 250 | (u64{15} << 39) | (u64{source_a} << 20));
-            // ARRAY_2D packs (layer, x) in Ra and y in Rb, as the existing bound gather.
+            // ARRAY_2D packs (layer, x) in Ra and y in Rb. AOFFI packs (x, y) in
+            // Ra/Ra+1 and the signed texel offsets in Rb, as upstream bound TLD4.
             emit(0x5c98000000000000ULL | predicate | 251 | (u64{15} << 39) |
-                 (u64{array ? source_a + 1 : source_b} << 20));
+                 (u64{array || offsets ? (source_a == 255 ? 255U : source_a + 1) : source_b} << 20));
             if (array)
                 emit(0x5c98000000000000ULL | predicate | 252 | (u64{15} << 39) | (u64{source_b} << 20));
             emit(0x5c98000000000000ULL | predicate | 246 | (u64{15} << 39) | (u64{handle} << 20));
+            // Maxwell bindless meta operands are the handle followed by the AOFFI word.
+            if (offsets)
+                emit(0x5c98000000000000ULL | predicate | 247 | (u64{15} << 39) | (u64{source_b} << 20));
             emit(0xdec0000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{246} << 20) |
-                 (u64{array ? 3U : 2U} << 28) | (u64{mask} << 31) | (u64{insn.Bits(87, 2)} << 38) |
+                 (u64{array ? 3U : 2U} << 28) | (u64{mask} << 31) | (u64{offsets ? 1U : 0U} << 36) |
+                 (u64{insn.Bits(87, 2)} << 38) |
                  (u64{insn.Bits(90, 1)} << 49) | (u64{7} << 51));
             for (u32 i = 0; i < components; ++i) {
                 const u32 target = !split || i < 2
@@ -2061,6 +2073,37 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                     : second_dest + i - 2;
                 if (target != 255)
                     emit(0x5c98000000000000ULL | predicate | target | (u64{15} << 39) | (u64{250 + i} << 20));
+            }
+            break;
+        }
+        case 0x364: { // TLD4.B (gather) with the handle in a register: packed 2D (x, y | handle).
+            // Like TEX 0x361 the handle follows the coordinates; no offsets, depth compare or F16.
+            const u32 mask = insn.Bits(72, 4), second_dest = insn.Bits(64, 8);
+            const u32 source_a = insn.Bits(24, 8), source_b = insn.Bits(32, 8);
+            const u32 limit = uses_uniform_bank ? 216U : 246U;
+            const u32 components = static_cast<u32>(std::popcount(mask));
+            const bool split = second_dest != 255;
+            const u32 low_count = split ? std::min(components, 2U) : components;
+            if (insn.Bits(40, 19) || !insn.Bits(59, 1) || !insn.Bits(60, 1) || insn.Bits(61, 3) != 1 ||
+                insn.Bits(76, 5) || insn.Bits(81, 3) != 7 || insn.Bits(89, 1) || insn.Bits(91, 1) ||
+                mask == 0 || source_a == 255 || source_a + 2 > limit || source_b >= limit ||
+                (dest != 255 && dest + low_count > limit) ||
+                (split && (components <= 2 || second_dest + components - 2 > limit)))
+                return fail(index, "native bindless texture gather mode");
+            const auto copy = [&](u32 target, u32 source) {
+                emit(0x5c98000000000000ULL | predicate | target | (u64{15} << 39) | (u64{source} << 20));
+            };
+            copy(250, source_a);
+            copy(251, source_a + 1);
+            copy(246, source_b);
+            // Maxwell TLD4.B: handle in Rb, component at 38.
+            emit(0xdec0000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{246} << 20) |
+                 (u64{2} << 28) | (u64{mask} << 31) | (u64{insn.Bits(87, 2)} << 38) |
+                 (u64{insn.Bits(90, 1)} << 49) | (u64{7} << 51));
+            for (u32 i = 0; i < components; ++i) {
+                const u32 target = !split || i < 2 ? (dest == 255 ? 255U : static_cast<u32>(dest) + i)
+                                                  : second_dest + (i - 2);
+                if (target != 255) copy(target, 250 + i);
             }
             break;
         }
@@ -2185,7 +2228,7 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 // Bits 61-63 are the dimension: 2D, or 3D (2) and ARRAY_2D (5) as (x, y | z[, lod])
                 // and (layer, x | y[, lod]).
                 const u32 dimension = texture.Bits(61, 3);
-                const bool dc = texture.Bits(78, 1), three = dimension == 2 || dimension == 5;
+                const bool dc = texture.Bits(78, 1), three = dimension == 2 || dimension == 3 || dimension == 5;
                 return texture.Bits(0, 12) == 0xf60 && h < 16 && !(h & 1) &&
                        (texture.words[1] & ~0xe0003fffU) == 0x10000000U &&
                        (dimension == 1 || (three && !dc)) &&
@@ -2245,9 +2288,9 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 // Control transfers and convergence barriers (BSSY/BSYNC/BREAK name a barrier there).
                 if (register_only || (op >= 0x940 && op <= 0x95f)) return false;
                 const u32 written = instruction.Bits(16, 8);
-                // USHF and 32-bit ULDC write one uniform register; wider uniform writes may also
-                // cover the register below.
-                const bool narrow = op == 0x899 || ((op == 0xab9 || op == 0xabb) && instruction.Bits(73, 3) < 5);
+                // USHF, REDUX, UBREV and UIADD3 write one uniform register (UIADD3
+                // additionally writes predicates). Wider uniform writes may cover the next UR.
+                const bool narrow = op == 0x899 || op == 0x3c4 || op == 0x2be || op == 0x290 || ((op == 0xab9 || op == 0xabb) && instruction.Bits(73, 3) < 5);
                 const u32 low = narrow ? handle : (handle == 0 ? 0 : handle - 1);
                 return written >= low && written <= handle + 1;
             };
@@ -2371,7 +2414,7 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
             const u32 lod = insn.Bits(87, 3);
             const bool has_lod = lod >= 2;
             if (insn.Bits(61, 3) != 1) {
-                // 3D packs (x, y) in Ra and (z[, lod]) in Rb, ARRAY_2D (layer, x) and (y[, lod]);
+                // 3D/CUBE pack (x, y) in Ra and (z[, lod]) in Rb, ARRAY_2D (layer, x) and (y[, lod]);
                 // Maxwell TEX reads the three in that order and takes the LOD after the handle
                 // (Star Fox's volume and LL array lookups).
                 if ((source_a != 255 && ((source_a & 1) || source_a + 2 > 216)) ||
@@ -2383,7 +2426,7 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 copy(246, uniform_register(handle));
                 if (has_lod) copy(247, source_b == 255 ? 255U : source_b + 1);
                 emit(0xde80000000000000ULL | predicate | 250 | (u64{250} << 8) | (u64{246} << 20) |
-                     (u64{insn.Bits(61, 3) == 5 ? 3U : 4U} << 28) | (u64{mask} << 31) | (u64{lod} << 37) |
+                     (u64{insn.Bits(61, 3) == 5 ? 3U : insn.Bits(61, 3) == 3 ? 6U : 4U} << 28) | (u64{mask} << 31) | (u64{lod} << 37) |
                      (u64{insn.Bits(90, 1)} << 49) | (u64{7} << 51));
                 for (u32 i = 0; i < components; ++i) {
                     const u32 target = i < 2 ? static_cast<u32>(dest) : second_dest;
@@ -3190,13 +3233,17 @@ case 0x311: { // F2I.FTZ.U64.TRUNC, per nvdisasm: Maxwell's F2I gives 32 bits, s
                 emit(base(0x5c10000000000000ULL) | (u64{250} << 8) | (u64{253} << 20));
                 break;
             }
-            if (insn.Bits(72, 1) || insn.Bits(80, 1) || insn.Bits(62, 2))
+            // Bit 63 negates the constant, as Maxwell ISCADD bit 48.
+            // Subtraction carry output is not modeled, so only PT is accepted for that form.
+            const bool negate = insn.Bits(63, 1) != 0;
+            if (insn.Bits(72, 1) || insn.Bits(80, 1) || insn.Bits(62, 1) ||
+                (negate && insn.Bits(81, 3) != 7))
                 return fail(index, "native constant LEA carry mode");
             // LEA Rd, Ra, c[b][o], s is ISCADD; a carry out (bits 81-83, PT for none) also compares
             // the sum against the constant, as the low half of a 64-bit address.
             const u32 b = operand(1, false);
             emit(base(0x5c18000000000000ULL) | (u64{insn.Bits(24, 8)} << 8) |
-                (u64{b} << 20) | (u64{insn.Bits(75, 5)} << 39));
+                (u64{b} << 20) | (u64{insn.Bits(75, 5)} << 39) | (u64{negate} << 48));
             if (insn.Bits(81, 3) != 7) {
                 emit(0x5b60000000000000ULL | predicate | 7 | (u64{insn.Bits(81, 3)} << 3) |
                     (dest << 8) | (u64{b} << 20) | (u64{7} << 39) | (u64{1} << 49));
