@@ -94,6 +94,7 @@ add_executable(tests
     video_core/ampere_yoshi_surface.cpp
     video_core/ampere_yoshi_shift.cpp
     video_core/ampere_yoshi_uniform_shift.cpp
+    video_core/maxwell_shr.cpp
     video_core/ampere_release_guards.cpp
     video_core/ampere_release_f2i.cpp
     video_core/ampere_uniform_immediate_shift.cpp
