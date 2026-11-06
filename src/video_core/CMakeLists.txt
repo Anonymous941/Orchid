@@ -251,6 +251,7 @@ add_library(video_core STATIC
     shader_cache.h
     shader_environment.cpp
     shader_environment.h
+    native_shader_hitch_trace.h
     shader_snapshot.h
     shader_handle_program.h
     shader_notify.cpp
