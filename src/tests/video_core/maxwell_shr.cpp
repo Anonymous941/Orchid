@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <catch2/catch_test_macros.hpp>
 #include "shader_recompiler/environment.h"
+#include "shader_recompiler/frontend/ampere/lower_to_maxwell.h"
 #include "shader_recompiler/frontend/ir/basic_block.h"
 #include "shader_recompiler/frontend/maxwell/translate/impl/impl.h"
 
@@ -50,7 +51,8 @@ public:
     void Dump(u64, u64) override {}
 };
 
-u32 RunIR(const IR::Block& block, std::array<u32, 256>& regs, bool& shift_in_range) {
+u32 RunIR(const IR::Block& block, std::array<u32, 256>& regs, std::array<bool, 7>& preds,
+          bool& shift_in_range) {
     std::unordered_map<const IR::Inst*, u32> values;
     auto arg = [&](IR::Value v) -> u32 {
         if (v.IsImmediate())
@@ -68,6 +70,24 @@ u32 RunIR(const IR::Block& block, std::array<u32, 256>& regs, bool& shift_in_ran
         case O::SetRegister:
             regs[static_cast<size_t>(inst.Arg(0).Reg())] = arg(inst.Arg(1));
             continue;
+        case O::GetPred:
+            result = preds[static_cast<size_t>(inst.Arg(0).Pred())];
+            break;
+        case O::SetPred:
+            preds[static_cast<size_t>(inst.Arg(0).Pred())] = arg(inst.Arg(1)) != 0;
+            continue;
+        case O::BitwiseOr32:
+            result = arg(inst.Arg(0)) | arg(inst.Arg(1));
+            break;
+        case O::BitFieldUExtract:
+            result = (arg(inst.Arg(0)) >> arg(inst.Arg(1))) & ((1U << arg(inst.Arg(2))) - 1);
+            break;
+        case O::GetZeroFromOp:
+            result = arg(inst.Arg(0)) == 0;
+            break;
+        case O::LogicalNot:
+            result = !arg(inst.Arg(0));
+            break;
         case O::BitwiseAnd32:
             result = arg(inst.Arg(0)) & arg(inst.Arg(1));
             break;
@@ -77,6 +97,7 @@ u32 RunIR(const IR::Block& block, std::array<u32, 256>& regs, bool& shift_in_ran
         case O::SLessThan:
             result = static_cast<s32>(arg(inst.Arg(0))) < static_cast<s32>(arg(inst.Arg(1)));
             break;
+        case O::SelectU1:
         case O::SelectU32:
             result = arg(inst.Arg(0)) ? arg(inst.Arg(1)) : arg(inst.Arg(2));
             break;
@@ -118,7 +139,8 @@ TEST_CASE("Maxwell SHR translator emits defined clamped IR", "[video_core][maxwe
                         regs[21] = source;
                         regs[22] = count;
                         bool in_range = true;
-                        RunIR(block, regs, in_range);
+                        std::array<bool, 7> preds{};
+                        RunIR(block, regs, preds, in_range);
                         CHECK(in_range);
                         const u32 amount = wrap ? count & 31 : std::min(count, 32U);
                         const u32 expected =
@@ -127,5 +149,59 @@ TEST_CASE("Maxwell SHR translator emits defined clamped IR", "[video_core][maxwe
                                          : source >> amount;
                         CHECK(regs[dest] == expected);
                     }
+}
+// Translate the actual P2R/R2P and SHR words emitted by the native lowerer. The conditional
+// execution of the SHR block models the Maxwell CFG's P6 edge; the instructions in each block
+// are produced by the production Maxwell translator, not a model of its SHR implementation.
+TEST_CASE("Yoshi guarded shift flows through Maxwell translator IR", "[video_core][maxwell_shr]") {
+    ShiftEnvironment env;
+    using Ampere::Instruction;
+    const Instruction end{{0x794d, 0, 0x03800000, 0}};
+    for (const u32 dest : {11U, 5U, 9U}) {
+        Instruction native{{0x3f0b0299, 5, 0x08011609, 0x000fe200}};
+        native.words[0] = (native.words[0] & ~0xff0000U) | (dest << 16);
+        auto lowered = Ampere::LowerToMaxwell(std::array{native, end});
+        REQUIRE(lowered);
+        REQUIRE(lowered.instructions.size() == 5);
+        ObjectPool<IR::Inst> pool;
+        IR::Block save{pool}, load{pool}, shift{pool}, restore{pool};
+        Maxwell::TranslatorVisitor vs{env, save}, vl{env, load}, vv{env, shift}, vr{env, restore};
+        vs.P2R_imm(lowered.instructions[0]);
+        vl.R2P_imm(lowered.instructions[1]);
+        vv.SHR_reg(lowered.instructions[2]);
+        vr.R2P_imm(lowered.instructions[3]);
+        for (const u32 count : {0U, 1U, 31U, 32U, 63U, 255U})
+            for (const u32 source : {0U, 0x80000001U, 0xffffffffU})
+                for (const bool up0 : {false, true})
+                    for (const bool p6 : {false, true}) {
+                        std::array<u32, 256> regs{};
+                        regs[221] = count;
+                        regs[225] = source;
+                        regs[216 + dest] = 0x12345678;
+                        if (dest == 5)
+                            regs[221] = count;
+                        if (dest == 9)
+                            regs[225] = source;
+                        const u32 before = regs[216 + dest], oldsource = regs[225],
+                                  oldcount = regs[221];
+                        regs[239] = up0 ? 64 : 0;
+                        std::array<bool, 7> preds{};
+                        preds[6] = p6;
+                        bool safe = true;
+                        RunIR(save, regs, preds, safe);
+                        RunIR(load, regs, preds, safe);
+                        if (preds[6])
+                            RunIR(shift, regs, preds, safe);
+                        RunIR(restore, regs, preds, safe);
+                        const u64 wide = u64{oldsource} << 32;
+                        const u32 expected =
+                            up0 ? static_cast<u32>((wide >> std::min(oldcount, 32U)) >> 32)
+                                : before;
+                        CHECK(safe);
+                        CHECK(regs[216 + dest] == expected);
+                        CHECK(preds[6] == p6);
+                        CHECK(regs[239] == (up0 ? 64U : 0U));
+                    }
+    }
 }
 } // namespace
