@@ -871,18 +871,16 @@ Tegra::Texture::TICEntry GraphicsEnvironment::ReadTextureDescriptor(u32 handle) 
 //   uniform memory once the GPU is past the draw, so a later read could see another draw's data.
 // - The texture pool is copied up to its limit, read like the attached path reads entries.
 // - The viewport transform flag and the HLE macro replacements are copied.
-bool GraphicsEnvironment::Detach() {
-    constexpr u32 MaxTexturePoolEntries = 1U << 15;
+ShaderSnapshotFailure GraphicsEnvironment::Detach() {
     const auto& regs{maxwell3d->regs};
-    if (regs.tex_header.limit >= MaxTexturePoolEntries) {
-        return false;
+    const auto failure = CheckTextureSnapshotPool(*gpu_memory, regs.tex_header.Address(),
+                                                  regs.tex_header.limit);
+    if (failure != ShaderSnapshotFailure::None) {
+        return failure;
     }
     const GPUVAddr pool_address{regs.tex_header.Address()};
     const size_t pool_entries{size_t{regs.tex_header.limit} + 1};
     const size_t pool_size{pool_entries * sizeof(Tegra::Texture::TICEntry)};
-    if (!gpu_memory->IsFullyMappedRange(pool_address, pool_size)) {
-        return false;
-    }
     EngineSnapshot copy;
     copy.texture_pool.resize(pool_entries);
     gpu_memory->ReadBlock(pool_address, copy.texture_pool.data(), pool_size);
@@ -897,7 +895,7 @@ bool GraphicsEnvironment::Detach() {
         // The size register can exceed what a constant buffer holds; never copy more than that.
         copied.size = (std::min)(live.size, static_cast<u32>(Maxwell::MaxConstBufferSize));
         copied.bytes.resize(copied.size + sizeof(u32));
-        gpu_memory->ReadBlockUnsafe(live.address, copied.bytes.data(), copied.bytes.size());
+        ReadConstantBufferSnapshot(*gpu_memory, live.address, copied.bytes);
     }
     copy.via_header_index = regs.sampler_binding == Maxwell::SamplerBinding::ViaHeaderBinding;
     copy.native_tiling = gpu_memory->UsesNativeTiling();
@@ -907,7 +905,7 @@ bool GraphicsEnvironment::Detach() {
     }
     snapshot = std::move(copy);
     maxwell3d = nullptr;
-    return true;
+    return ShaderSnapshotFailure::None;
 }
 
 size_t GraphicsEnvironment::SnapshotSizeBytes() const noexcept {

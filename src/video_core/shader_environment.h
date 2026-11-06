@@ -23,6 +23,7 @@
 #include "shader_recompiler/environment.h"
 #include "video_core/engines/maxwell_3d.h"
 #include "video_core/host1x/gpu_device_memory_manager.h"
+#include "video_core/shader_snapshot.h"
 
 namespace Tegra {
 class Memorymanager;
@@ -170,11 +171,11 @@ public:
 
     std::optional<Shader::ReplaceConstant> GetReplaceConstBuffer(u32 bank, u32 offset) override;
 
-    /// Copies what translation reads from the 3D engine and stops using the engine, so the
-    /// program can be translated on a worker thread while the GPU thread moves on. Returns
-    /// false, leaving the environment unchanged, when the texture pool is larger than the copy
-    /// bound or not fully mapped.
-    [[nodiscard]] bool Detach();
+    /// Copies what translation reads from the 3D engine and stops using the engine, so a worker
+    /// can translate without reading live engine state (the caller still waits for it). Returns
+    /// a failure reason, leaving the environment unchanged, when the texture pool is larger than
+    /// the copy bound or not fully mapped.
+    [[nodiscard]] ShaderSnapshotFailure Detach();
 
     /// Bytes of constant buffer and texture descriptor contents copied by Detach (0 if not
     /// detached).

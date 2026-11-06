@@ -68,6 +68,7 @@ using VideoCommon::ComputeEnvironment;
 using VideoCommon::FileEnvironment;
 using VideoCommon::GenericEnvironment;
 using VideoCommon::GraphicsEnvironment;
+using VideoCommon::ShaderSnapshotFailure;
 
 constexpr u32 CACHE_VERSION = 0x4e4f0001; // Isolated no-OOT test cache.
 constexpr size_t VULKAN_CACHE_FLUSH_PIPELINES = 128;
@@ -1551,8 +1552,10 @@ public:
         LogEvery10Seconds();
     }
 
-    void NotDetached() {
+    void NotDetached(ShaderSnapshotFailure reason, u32 limit) {
         ++not_detached;
+        ++failures[static_cast<size_t>(reason)];
+        largest_rejected_limit = (std::max)(largest_rejected_limit, limit);
         LogEvery10Seconds();
     }
 
@@ -1577,10 +1580,16 @@ private:
         LOG_INFO(Render_Vulkan,
                  "Graphics pipelines translated on workers in the last 10 s: {} queued ({} KiB "
                  "of state copied), {} adopted ({:.1f} ms on workers), {} built on the GPU "
-                 "thread (texture pool not contiguous); GPU thread: {:.1f} ms preparing, {:.1f} "
+                 "thread (snapshot fallback); GPU thread: {:.1f} ms preparing, {:.1f} "
                  "ms waiting",
                  queued, copied_bytes / 1024, adopted, ms(build_time),
                  not_detached, ms(preparation_time), ms(wait_time));
+        LOG_INFO(Render_Vulkan,
+                 "Graphics snapshot fallback reasons: texture pool entry limit {}, texture pool "
+                 "not fully mapped {}, largest rejected limit {}",
+                 failures[static_cast<size_t>(ShaderSnapshotFailure::TexturePoolEntryLimit)],
+                 failures[static_cast<size_t>(ShaderSnapshotFailure::TexturePoolNotMapped)],
+                 largest_rejected_limit);
         // Start a new window.
         *this = TranslationReport{};
     }
@@ -1588,6 +1597,8 @@ private:
     u32 queued{};
     u32 not_detached{};
     u32 adopted{};
+    u32 largest_rejected_limit{};
+    std::array<u32, static_cast<size_t>(ShaderSnapshotFailure::Count)> failures{};
     size_t copied_bytes{};
     Duration preparation_time{};
     Duration wait_time{};
@@ -1674,7 +1685,10 @@ void PipelineCache::SerializeGraphicsPipeline(const GraphicsPipelineCacheKey& ke
 // met them, so translation never reads guest memory for instructions. Compute pipelines stay
 // synchronous.
 bool PipelineCache::CanTranslateAsynchronously() const {
-    if (!use_async_translation) {
+    // Without the reuse recorder, native pointer classification can query live GPU mappings.
+    // That state is not part of the detached snapshot: keep this debug path on the GPU thread.
+    // Driver pipeline compilation can still use its asynchronous workers.
+    if (!use_async_translation || !use_shader_reuse) {
         return false;
     }
     if (!maxwell3d->GetNativeMacroEngine().native_turing) {
@@ -1702,8 +1716,9 @@ PipelineCache::QueueGraphicsTranslation() {
         if (graphics_key.unique_hashes[index] == 0) {
             continue;
         }
-        if (!environments.envs[index].Detach()) {
-            GetTranslationReport().NotDetached();
+        const auto failure = environments.envs[index].Detach();
+        if (failure != ShaderSnapshotFailure::None) {
+            GetTranslationReport().NotDetached(failure, maxwell3d->regs.tex_header.limit);
             return std::nullopt;
         }
         snapshot_bytes += environments.envs[index].SnapshotSizeBytes();

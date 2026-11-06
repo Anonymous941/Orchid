@@ -75,6 +75,7 @@ add_executable(tests
     video_core/cooperative_matrix.cpp
     video_core/texture_depth_float.cpp
     video_core/texture_descriptor_bounds.cpp
+    video_core/shader_snapshot.cpp
     video_core/texture_r2ur_handle.cpp
     video_core/ampere_kirby.cpp
     video_core/ampere_geometry.cpp
@@ -98,6 +99,7 @@ add_executable(tests
     video_core/syncpoint_manager.cpp
     video_core/native_macro_fifo.cpp
     video_core/uniform_stream_reuse.cpp
+    video_core/sparse_uniform_upload.cpp
     video_core/shader_invalidation.cpp
     video_core/descriptor_table.cpp
     video_core/usage_tracker.cpp

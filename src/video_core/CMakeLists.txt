@@ -16,6 +16,7 @@ endif()
 add_library(video_core STATIC
     buffer_cache/buffer_base.h
     buffer_cache/buffer_cache_base.h
+    buffer_cache/sparse_uniform_upload.h
     buffer_cache/storage_buffer_size.h
     buffer_cache/buffer_cache.cpp
     buffer_cache/buffer_cache.h
@@ -247,6 +248,7 @@ add_library(video_core STATIC
     shader_cache.h
     shader_environment.cpp
     shader_environment.h
+    shader_snapshot.h
     shader_handle_program.h
     shader_notify.cpp
     shader_notify.h
