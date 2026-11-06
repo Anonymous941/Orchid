@@ -36,19 +36,21 @@ Mario Tennis Fever first, plus the shader, kernel and graphics work other games 
 
 ## Project scope
 
-Orchid is an independent, experimental Nintendo Switch 2 emulator based on Eglantine.
-The current focus is getting games to boot, render correctly and run more reliably, with
-Mario Tennis Fever as an initial priority and broader compatibility work driven by other games.
+Orchid's support and development focus is on demonstrably improving these games:
 
-- **Compatibility and correctness:** improve Switch 2 shader translation, graphics, kernel and
-  system emulation, and fix reproducible crashes and rendering issues.
-- **Performance:** improve emulation speed while checking stability and correctness; results
-  depend on the game, hardware and drivers.
-- **Desktop builds:** provide Linux and Windows releases, plus experimental macOS builds.
+- Mario Tennis Fever
+- Both Hyrule Warriors games
+- Pokémon Pokopia
+- Star Fox
+- Super Mario Bros. Wonder
+- Yoshi and the Mysterious Book
+- Donkey Kong Bananza
+- Kirby Air Riders
+- Kirby and the Forgotten Land
 
-Orchid is still a work in progress. Support for one game does not imply support for the full
-Switch 2 library. See [Performance and compatibility](#performance-and-compatibility) for the
-currently reported results and their test conditions.
+These are the project's target games; inclusion here does not mean a game is already fully
+playable or free of issues. See [Performance and compatibility](#performance-and-compatibility)
+for the currently reported results and their test conditions.
 
 ## Branches and builds
 
