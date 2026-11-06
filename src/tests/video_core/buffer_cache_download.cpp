@@ -105,6 +105,7 @@ TEST_CASE("BufferCache: readback spanning separate buffers", "[video_core][buffe
     table.Resize(32, 12);
     cpu.SetCurrentPageTable(process);
     constexpr u64 phys = 0x80000, guest = 0x200000, dev = 0x70000, gap = 0x10000;
+    system.DeviceMemory().buffer.ClearBackingRegion(phys, 3 * gap, 0);
     cpu.MapMemoryRegion(table, Common::ProcessAddress{guest}, 3 * gap,
                         Common::PhysicalAddress{Core::DramMemoryMap::Base + phys},
                         Common::MemoryPermission::ReadWrite, false);
